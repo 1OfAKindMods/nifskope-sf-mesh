@@ -4,11 +4,13 @@
 
 #include <QDialog>
 #include <QGridLayout>
-
+#include <QSettings>
 #include <cfloat>
 
 #include "libfo76utils/src/fp32vec4.hpp"
 #include "io/MeshFile.h"
+#include "meshoptimizer/meshoptimizer.h"
+#include "meshlet.h"
 
 // Brief description is deliberately not autolinked to class Spell
 /*! \file mesh.cpp
@@ -741,7 +743,7 @@ static bool calculateBoundingBox( FloatVector4 & bndCenter, FloatVector4 & bndDi
 	FloatVector4	tmpMin( float(FLT_MAX) );
 	FloatVector4	tmpMax( float(-FLT_MAX) );
 	for ( qsizetype i = 0; i < n; i++ ) {
-		FloatVector4	v( verts[i][0], verts[i][1], verts[i][2], 0.0f );
+		FloatVector4	v( verts[i] );
 		tmpMin.minValues( v );
 		tmpMax.maxValues( v );
 	}
@@ -831,7 +833,9 @@ public:
 		return nif->blockInherits( index, "BSTriShape" ) && nif->getIndex( index, "Vertex Data" ).isValid();
 	}
 
-	QModelIndex cast_Starfield( NifModel * nif, const QModelIndex & index );
+	static void calculateSFBoneBounds(
+		NifModel * nif, const QPersistentModelIndex & iBoneList, int numBones, const MeshFile & meshFile );
+	static QModelIndex cast_Starfield( NifModel * nif, const QModelIndex & index );
 
 	QModelIndex cast( NifModel * nif, const QModelIndex & index ) override final
 	{
@@ -864,80 +868,60 @@ public:
 	}
 };
 
-static void updateMeshlets( NifModel * nif, const QPersistentModelIndex & iMeshData, const MeshFile & meshFile )
+void spUpdateBounds::calculateSFBoneBounds(
+	NifModel * nif, const QPersistentModelIndex & iBoneList, int numBones, const MeshFile & meshFile )
 {
-	NifItem *	item = nif->getItem( iMeshData );
-	if ( !item )
-		return;
-	item->invalidateVersionCondition();
-	item->invalidateCondition();
-	nif->set<quint32>( iMeshData, "Version", 2 );
-
-	std::vector< int >	meshletData;
-	std::set< int >	meshletVertices;
-	int	vertexCount = 0;
-	int	vertexOffset = 0;
-	int	triangleCount = 0;
-	int	triangleOffset = 0;
-
-	int	numTriangles = int( meshFile.triangles.size() );
-	for ( int i = 0; i < numTriangles; ) {
-		Triangle	t = meshFile.triangles.at( i );
-		int	newVertices = 0;
-		for ( int j = 0; j < 3; j++ )
-			newVertices += int( meshletVertices.insert( int(t[j]) ).second );
-		if ( ( vertexCount + newVertices ) > 96 || ( triangleCount + 1 ) > 128 ) {
-			meshletData.push_back( vertexCount );
-			meshletData.push_back( vertexOffset );
-			meshletData.push_back( triangleCount );
-			meshletData.push_back( triangleOffset );
-			vertexOffset = vertexOffset + vertexCount;
-			triangleOffset = ( triangleOffset + ( triangleCount * 3 ) + 3 ) & ~3;
-			vertexCount = 0;
-			triangleCount = 0;
-			meshletVertices.clear();
-			continue;
+	std::map< int, std::vector< Vector3 > >	boneVertexMap;
+	for ( const auto & w : meshFile.weights ) {
+		qsizetype	i = qsizetype( &w - meshFile.weights.data() );
+		if ( i >= meshFile.positions.size() ) [[unlikely]]
+			break;
+		for ( const auto & b : w.weightsUNORM ) {
+			if ( (unsigned int) b.bone < (unsigned int) numBones && b.weight > 0.0001f )
+				boneVertexMap[int(b.bone)].push_back( meshFile.positions.at(i) );
 		}
-		vertexCount += newVertices;
-		triangleCount++;
-		i++;
 	}
-	if ( triangleCount > 0 ) {
-		meshletData.push_back( vertexCount );
-		meshletData.push_back( vertexOffset );
-		meshletData.push_back( triangleCount );
-		meshletData.push_back( triangleOffset );
+	for ( int i = 0; i < numBones; i++ ) {
+		auto	iBone = QModelIndex_child( iBoneList, i );
+		if ( !iBone.isValid() )
+			continue;
+		std::vector< Vector3 > &	vertices = boneVertexMap[i];
+		Transform	t( nif, iBone );
+		for ( auto & v : vertices )
+			v = t * v;
+		BoundSphere	bounds;
+		if ( vertices.empty() ) {
+			bounds.center = Vector3( 0.0f, 0.0f, 0.0f );
+			bounds.radius = 0.0f;
+		} else {
+			bounds = BoundSphere( vertices.data(), qsizetype(vertices.size()), true );
+		}
+		bounds.update( nif, iBone );
 	}
-	int	meshletCount = int( meshletData.size() >> 2 );
+}
 
-	nif->set<quint32>( iMeshData, "Num Meshlets", quint32(meshletCount) );
+static void updateCullData( NifModel * nif, const QPersistentModelIndex & iMeshData, const MeshFile & meshFile )
+{
+	int	meshletCount = int( nif->get<quint32>( iMeshData, "Num Meshlets" ) );
 	auto	iMeshlets = nif->getIndex( iMeshData, "Meshlets" );
-	nif->updateArraySize( iMeshlets );
 	nif->set<quint32>( iMeshData, "Num Cull Data", quint32(meshletCount) );
 	auto	iCullData = nif->getIndex( iMeshData, "Cull Data" );
 	nif->updateArraySize( iCullData );
-	int	j = 0;
-	int	k = 0;
-	for ( int i = 0; i < meshletCount; i++, j += 4 ) {
-		triangleCount = meshletData[j + 2];
-		auto	iMeshlet = QModelIndex_child( iMeshlets, i );
-		if ( iMeshlet.isValid() ) {
-			nif->set<quint32>( iMeshlet, "Vertex Count", meshletData[j] );
-			nif->set<quint32>( iMeshlet, "Vertex Offset", meshletData[j + 1] );
-			nif->set<quint32>( iMeshlet, "Triangle Count", triangleCount );
-			nif->set<quint32>( iMeshlet, "Triangle Offset", meshletData[j + 3] );
-		}
+	qsizetype	k = 0;
+	for ( int i = 0; i < meshletCount; i++ ) {
+		int	triangleCount = int( nif->get<quint32>( QModelIndex_child( iMeshlets, i ), "Triangle Count" ) );
 		FloatVector4	bndMin( float(FLT_MAX) );
-		FloatVector4	bndMax( float(FLT_MIN) );
+		FloatVector4	bndMax( float(-FLT_MAX) );
 		bool	haveBounds = false;
-		for ( int l = 0; l < triangleCount; l++, k++ ) {
+		for ( int j = 0; j < triangleCount; j++, k++ ) {
+			if ( k >= meshFile.triangles.size() ) [[unlikely]]
+				break;
 			Triangle	t = meshFile.triangles.at( k );
-			for ( int m = 0; m < 3; m++ ) {
-				int	n = t[m];
-				if ( !( n >= 0 && n < int(meshFile.positions.size()) ) )
+			for ( int l = 0; l < 3; l++ ) {
+				int	m = t[l];
+				if ( !( m >= 0 && m < int(meshFile.positions.size()) ) )
 					continue;
-				const Vector3 &	v = meshFile.positions.at( n );
-				FloatVector4	xyz( v[0], v[1], v[2], 0.0f );
+				FloatVector4	xyz( meshFile.positions.at( m ) );
 				bndMin.minValues( xyz );
 				bndMax.maxValues( xyz );
 				haveBounds = true;
@@ -963,6 +947,21 @@ QModelIndex spUpdateBounds::cast_Starfield( NifModel * nif, const QModelIndex & 
 	BoundSphere	bounds;
 	FloatVector4	bndCenter( 0.0f );
 	FloatVector4	bndDims( -1.0f );
+	QModelIndex	iBoneList;
+	int	numBones = 0;
+	for ( auto iSkin = nif->getBlockIndex( nif->getLink( index, "Skin" ) ); iSkin.isValid(); ) {
+		bounds.center = Vector3( 0.0f, 0.0f, 0.0f );
+		bounds.radius = 0.0f;
+		bndCenter = FloatVector4( float(FLT_MAX) );
+		bndDims = FloatVector4( float(FLT_MAX) );
+		auto	iBoneData = nif->getBlockIndex( nif->getLink( iSkin, "Data" ) );
+		if ( iBoneData.isValid() ) {
+			iBoneList = nif->getIndex( iBoneData, "Bone List" );
+			if ( iBoneList.isValid() && nif->isArray( iBoneList ) )
+				numBones = nif->rowCount( iBoneList );
+		}
+		break;
+	}
 	for ( int i = 0; i <= 3; i++ ) {
 		auto mesh = QModelIndex_child( meshes, i );
 		if ( !mesh.isValid() )
@@ -984,14 +983,21 @@ QModelIndex spUpdateBounds::cast_Starfield( NifModel * nif, const QModelIndex & 
 		nif->set<quint32>( mesh, "Num Verts", numVerts );
 		// FIXME: mesh flags are not updated
 		if ( meshFile.isValid() && meshFile.positions.size() > 0 && !boundsCalculated ) {
-			// Creating a bounding sphere and bounding box from the verts
-			bounds = BoundSphere( meshFile.positions, true );
-			calculateBoundingBox( bndCenter, bndDims, meshFile.positions );
+			if ( numBones > 0 ) {
+				calculateSFBoneBounds( nif, iBoneList, numBones, meshFile );
+			} else {
+				// Creating a bounding sphere and bounding box from the verts
+				bounds = BoundSphere( meshFile.positions, true );
+				calculateBoundingBox( bndCenter, bndDims, meshFile.positions );
+			}
 			boundsCalculated = true;
 		}
+		if ( ( nif->get<quint32>(index, "Flags") & 0x0200 ) == 0 )
+			continue;
 		auto	meshData = nif->getIndex( mesh, "Mesh Data" );
-		if ( meshData.isValid() )
-			updateMeshlets( nif, meshData, meshFile );
+		// update cull data for version 2 meshlets
+		if ( meshData.isValid() && nif->get<quint32>( meshData, "Version" ) >= 2U )
+			updateCullData( nif, meshData, meshFile );
 	}
 
 	bounds.update( nif, index );
@@ -1039,6 +1045,194 @@ public:
 };
 
 REGISTER_SPELL( spUpdateAllBounds )
+
+
+//! Generates Starfield meshlets
+class spGenerateMeshlets final : public Spell
+{
+public:
+	QString name() const override final { return Spell::tr( "Generate Meshlets and Update Bounds" ); }
+	QString page() const override final { return Spell::tr( "Mesh" ); }
+
+	bool isApplicable( const NifModel * nif, const QModelIndex & index ) override final
+	{
+		if ( !( nif && nif->getBSVersion() >= 170 ) )
+			return false;
+		if ( !index.isValid() )
+			return true;
+		return ( nif->blockInherits( index, "BSGeometry" ) && ( nif->get<quint32>(index, "Flags") & 0x0200 ) != 0 );
+	}
+
+	static void updateMeshlets( NifModel * nif, const QPersistentModelIndex & iMeshData, const MeshFile & meshFile );
+	QModelIndex cast( NifModel * nif, const QModelIndex & index ) override final;
+};
+
+void spGenerateMeshlets::updateMeshlets(
+	NifModel * nif, const QPersistentModelIndex & iMeshData, const MeshFile & meshFile )
+{
+	int	meshletAlgorithm;
+	{
+		QSettings	settings;
+		meshletAlgorithm = settings.value( "Settings/Nif/Starfield Meshlet Algorithm", 0 ).toInt();
+		meshletAlgorithm = std::min< int >( std::max< int >( meshletAlgorithm, 0 ), 4 );
+	}
+
+	NifItem *	item = nif->getItem( iMeshData );
+	if ( !item )
+		return;
+	item->invalidateVersionCondition();
+	item->invalidateCondition();
+	nif->set<quint32>( iMeshData, "Version", 2 );
+
+	std::vector< meshopt_Meshlet >	meshletData;
+	if ( meshFile.positions.size() > 0 && meshFile.triangles.size() > 0 ) {
+		try {
+			size_t	vertexCnt = size_t( meshFile.positions.size() );
+			size_t	triangleCnt = size_t( meshFile.triangles.size() );
+			auto	iTriangles = nif->getIndex( iMeshData, "Triangles" );
+			if ( !iTriangles.isValid() || size_t( nif->rowCount( iTriangles ) ) != triangleCnt )
+				throw FO76UtilsError( "invalid triangle data" );
+			if ( meshletAlgorithm < 4 ) {
+				std::vector< unsigned int >	indices( triangleCnt * 3 );
+				size_t	k = 0;
+				for ( const auto & t : meshFile.triangles ) {
+					if ( t[0] >= vertexCnt || t[1] >= vertexCnt || t[2] >= vertexCnt )
+						throw FO76UtilsError( "vertex number is out of range" );
+					indices[k] = t[0];
+					indices[k + 1] = t[1];
+					indices[k + 2] = t[2];
+					k = k + 3;
+				}
+				size_t	maxMeshlets = meshopt_buildMeshletsBound( triangleCnt * 3, 96, 128 );
+				meshletData.resize( maxMeshlets );
+				std::vector< unsigned int >	meshletVertices( maxMeshlets * 96 );
+				std::vector< unsigned char >	meshletTriangles( maxMeshlets * 128 * 3 );
+				size_t	meshletCnt;
+				if ( meshletAlgorithm & 2 ) {
+					std::vector< unsigned int >	indicesOpt( triangleCnt * 3 );
+					meshopt_spatialSortTriangles( indicesOpt.data(), indices.data(), triangleCnt * 3,
+													&( meshFile.positions.at(0)[0] ), vertexCnt, sizeof( Vector3 ) );
+					meshopt_optimizeVertexCache( indices.data(), indicesOpt.data(), triangleCnt * 3, vertexCnt );
+					meshletCnt =
+						meshopt_buildMeshletsScan( meshletData.data(), meshletVertices.data(), meshletTriangles.data(),
+													indices.data(), triangleCnt * 3, vertexCnt, 96, 128 );
+				} else {
+					meshletCnt =
+						meshopt_buildMeshlets( meshletData.data(), meshletVertices.data(), meshletTriangles.data(),
+												indices.data(), triangleCnt * 3, &( meshFile.positions.at(0)[0] ),
+												vertexCnt, sizeof( Vector3 ), 96, 128, 0.25f );
+				}
+				meshletData.resize( meshletCnt );
+				if ( meshletAlgorithm & 1 ) {
+					for ( const auto & m : meshletData ) {
+						meshopt_optimizeMeshlet( meshletVertices.data() + m.vertex_offset,
+												meshletTriangles.data() + m.triangle_offset,
+												m.triangle_count, m.vertex_count );
+					}
+				}
+				k = 0;
+				for ( const auto & m : meshletData ) {
+					unsigned int	n = m.triangle_count;
+					const unsigned int *	v = meshletVertices.data() + m.vertex_offset;
+					const unsigned char *	p = meshletTriangles.data() + m.triangle_offset;
+					for ( ; n; n--, k++, p = p + 3 ) {
+						auto	iTriangle = QModelIndex_child( iTriangles, int(k) );
+						if ( !iTriangle.isValid() )
+							throw FO76UtilsError( "triangle number is out of range" );
+						Triangle	t( quint16(v[p[0]]), quint16(v[p[1]]), quint16(v[p[2]]) );
+						nif->set<Triangle>( iTriangle, t );
+					}
+				}
+			} else {
+				std::vector< DirectX::Meshlet >	tmpMeshlets;
+				std::vector< std::uint16_t >	newIndices;
+				int	err = DirectX::ComputeMeshlets( meshFile.triangles.data(), triangleCnt,
+													meshFile.positions.data(), vertexCnt,
+													tmpMeshlets, newIndices, 96, 128 );
+				if ( err ) {
+					throw FO76UtilsError( err == ERANGE ? "vertex number is out of range"
+														: ( err == ENOMEM ? "std::bad_alloc" : "invalid argument" ) );
+				}
+				meshletData.resize( tmpMeshlets.size() );
+				std::uint32_t	vertexOffset = 0;
+				std::uint32_t	triangleOffset = 0;
+				for ( const auto & m : tmpMeshlets ) {
+					meshopt_Meshlet &	o = meshletData[&m - tmpMeshlets.data()];
+					o.vertex_offset = vertexOffset;
+					o.triangle_offset = triangleOffset;
+					o.vertex_count = m.VertCount;
+					vertexOffset = vertexOffset + o.vertex_count;
+					o.triangle_count = m.PrimCount;
+					triangleOffset = ( triangleOffset + ( o.triangle_count * 3U ) + 3U ) & ~3U;
+				}
+				for ( int i = 0; i < int(triangleCnt); i++ ) {
+					Triangle	t( newIndices[i * 3], newIndices[i * 3 + 1], newIndices[i * 3 + 2] );
+					nif->set<Triangle>( QModelIndex_child( iTriangles, i ), t );
+				}
+			}
+		} catch ( std::exception & e ) {
+			meshletData.clear();
+			QMessageBox::critical( nullptr, "NifSkope error", QString("Meshlet generation failed: %1").arg(e.what()) );
+		}
+	}
+	int	meshletCount = int( meshletData.size() );
+
+	nif->set<quint32>( iMeshData, "Num Meshlets", quint32(meshletCount) );
+	auto	iMeshlets = nif->getIndex( iMeshData, "Meshlets" );
+	nif->updateArraySize( iMeshlets );
+	for ( int i = 0; i < meshletCount; i++ ) {
+		auto	iMeshlet = QModelIndex_child( iMeshlets, i );
+		if ( iMeshlet.isValid() ) {
+			nif->set<quint32>( iMeshlet, "Vertex Count", meshletData[i].vertex_count );
+			nif->set<quint32>( iMeshlet, "Vertex Offset", meshletData[i].vertex_offset );
+			nif->set<quint32>( iMeshlet, "Triangle Count", meshletData[i].triangle_count );
+			nif->set<quint32>( iMeshlet, "Triangle Offset", meshletData[i].triangle_offset );
+		}
+	}
+
+	updateCullData( nif, iMeshData, meshFile );
+}
+
+QModelIndex spGenerateMeshlets::cast( NifModel * nif, const QModelIndex & index )
+{
+	if ( !( nif && nif->getBSVersion() >= 170 ) )
+		return index;
+	if ( !index.isValid() ) {
+		// process all shapes
+		for ( int n = 0; n < nif->getBlockCount(); n++ ) {
+			QModelIndex idx = nif->getBlockIndex( n );
+			if ( idx.isValid() )
+				cast( nif, idx );
+		}
+		return index;
+	}
+
+	if ( !nif->blockInherits( index, "BSGeometry" ) )
+		return index;
+
+	auto	meshes = nif->getIndex( index, "Meshes" );
+	if ( meshes.isValid() && ( nif->get<quint32>(index, "Flags") & 0x0200 ) != 0 ) {
+		for ( int i = 0; i <= 3; i++ ) {
+			auto mesh = QModelIndex_child( meshes, i );
+			if ( !mesh.isValid() )
+				continue;
+			auto hasMesh = nif->getIndex( mesh, "Has Mesh" );
+			if ( !hasMesh.isValid() || nif->get<quint8>( hasMesh ) == 0 )
+				continue;
+			mesh = nif->getIndex( mesh, "Mesh" );
+			if ( !mesh.isValid() )
+				continue;
+			MeshFile	meshFile( nif, mesh );
+			auto	meshData = nif->getIndex( mesh, "Mesh Data" );
+			if ( meshData.isValid() )
+				updateMeshlets( nif, meshData, meshFile );
+		}
+	}
+
+	return spUpdateBounds::cast_Starfield( nif, index );
+}
+
+REGISTER_SPELL( spGenerateMeshlets )
 
 
 //! Update Triangles on Data from Skin

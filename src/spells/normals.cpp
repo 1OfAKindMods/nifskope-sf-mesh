@@ -8,6 +8,7 @@
 #include <QLabel>
 #include <QLayout>
 #include <QPushButton>
+#include <QMessageBox>
 
 // Brief description is deliberately not autolinked to class Spell
 /*! \file normals.cpp
@@ -15,6 +16,17 @@
  *
  * All classes here inherit from the Spell class.
  */
+
+static inline void normalizeUDecVector4( UDecVector4 & n )
+{
+	FloatVector4	xyzw( &(n[0]) );
+	float	r = xyzw.dotProduct3( xyzw );
+	if ( r > 0.0f ) [[likely]]
+		xyzw /= float( std::sqrt( r ) );
+	else
+		xyzw = FloatVector4( 0.0f, 0.0f, 1.0f, 0.0f );
+	xyzw.convertToVector3( &(n[0]) );
+}
 
 //! Recalculates and faces the normals of a mesh
 class spFaceNormals final : public Spell
@@ -52,11 +64,20 @@ public:
 
 	bool isApplicable( const NifModel * nif, const QModelIndex & index ) override final
 	{
+		if ( nif->getBSVersion() >= 170 && nif->isNiBlock( index, "BSGeometry" ) )
+			return ( ( nif->get<quint32>(index, "Flags") & 0x0200 ) != 0 );
 		return getShapeData( nif, index ).isValid();
 	}
 
+	static void faceNormalsSFMesh( NifModel * nif, const QModelIndex & index );
+
 	QModelIndex cast( NifModel * nif, const QModelIndex & index ) override final
 	{
+		if ( nif->getBSVersion() >= 170 && nif->isNiBlock( index, "BSGeometry" ) ) {
+			faceNormalsSFMesh( nif, index );
+			return index;
+		}
+
 		QModelIndex iData = getShapeData( nif, index );
 
 		auto faceNormals = []( const QVector<Vector3> & verts, const QVector<Triangle> & triangles, QVector<Vector3> & norms ) {
@@ -151,6 +172,62 @@ public:
 	}
 };
 
+void spFaceNormals::faceNormalsSFMesh( NifModel * nif, const QModelIndex & index )
+{
+	if ( ( nif->get<quint32>(index, "Flags") & 0x0200 ) == 0 )
+		return;
+
+	auto	iMeshes = nif->getIndex( index, "Meshes" );
+	if ( !iMeshes.isValid() )
+		return;
+	for ( int i = 0; i <= 3; i++ ) {
+		if ( !nif->get<bool>( QModelIndex_child( iMeshes, i ), "Has Mesh" ) )
+			continue;
+		QModelIndex	iMesh = nif->getIndex( QModelIndex_child( iMeshes, i ), "Mesh" );
+		if ( !iMesh.isValid() )
+			continue;
+		QModelIndex	iMeshData = nif->getIndex( iMesh, "Mesh Data" );
+		if ( !iMeshData.isValid() )
+			continue;
+
+		QModelIndex	iTriangles = nif->getIndex( iMeshData, "Triangles" );
+		QModelIndex	iVertices = nif->getIndex( iMeshData, "Vertices" );
+		QModelIndex	iNormals = nif->getIndex( iMeshData, "Normals" );
+		int	numVerts;
+		if ( !( iTriangles.isValid() && iVertices.isValid() && iNormals.isValid()
+				&& ( numVerts = nif->rowCount( iVertices ) ) > 0 && nif->rowCount( iNormals ) == numVerts ) ) {
+			QMessageBox::critical( nullptr, "NifSkope error", QString("Error calculating normals for mesh %1").arg(i) );
+			continue;
+		}
+
+		QVector< Triangle >	triangles( nif->getArray<Triangle>( iTriangles ) );
+		QVector< Vector3 >	vertices( nif->getArray<Vector3>( iVertices ) );
+		QVector< UDecVector4 >	normals;
+		normals.resize( numVerts );
+		for ( auto & n : normals )
+			FloatVector4( 0.0f ).convertToFloats( &(n[0]) );
+		for ( const auto & t : triangles ) {
+			if ( qsizetype(t[0]) >= numVerts || qsizetype(t[1]) >= numVerts || qsizetype(t[2]) >= numVerts )
+				continue;
+			FloatVector4	v0( vertices.at( t[0] ) );
+			FloatVector4	v1( vertices.at( t[1] ) );
+			FloatVector4	v2( vertices.at( t[2] ) );
+			FloatVector4	normal = ( v1 - v0 ).crossProduct3( v2 - v0 );
+			float *	n0 = &( normals[t[0]][0] );
+			float *	n1 = &( normals[t[1]][0] );
+			float *	n2 = &( normals[t[2]][0] );
+			( FloatVector4( n0 ) + normal ).convertToFloats( n0 );
+			( FloatVector4( n1 ) + normal ).convertToFloats( n1 );
+			( FloatVector4( n2 ) + normal ).convertToFloats( n2 );
+		}
+		for ( auto & n : normals ) {
+			normalizeUDecVector4( n );
+			n[3] = -1.0f / 3.0f;
+		}
+		nif->setArray<UDecVector4>( iNormals, normals );
+	}
+}
+
 REGISTER_SPELL( spFaceNormals )
 
 //! Flip normals of a mesh, without recalculating them.
@@ -162,12 +239,21 @@ public:
 
 	bool isApplicable( const NifModel * nif, const QModelIndex & index ) override final
 	{
+		if ( nif->getBSVersion() >= 170 && nif->isNiBlock( index, "BSGeometry" ) )
+			return ( ( nif->get<quint32>(index, "Flags") & 0x0200 ) != 0 );
 		QModelIndex iData = spFaceNormals::getShapeData( nif, index );
 		return ( iData.isValid() && nif->get<bool>( iData, "Has Normals" ) );
 	}
 
+	static void flipNormalsSFMesh( NifModel * nif, const QModelIndex & index );
+
 	QModelIndex cast( NifModel * nif, const QModelIndex & index ) override final
 	{
+		if ( nif->getBSVersion() >= 170 && nif->isNiBlock( index, "BSGeometry" ) ) {
+			flipNormalsSFMesh( nif, index );
+			return index;
+		}
+
 		QModelIndex iData = spFaceNormals::getShapeData( nif, index );
 
 		QVector<Vector3> norms = nif->getArray<Vector3>( iData, "Normals" );
@@ -181,6 +267,35 @@ public:
 	}
 };
 
+void spFlipNormals::flipNormalsSFMesh( NifModel * nif, const QModelIndex & index )
+{
+	if ( ( nif->get<quint32>(index, "Flags") & 0x0200 ) == 0 )
+		return;
+
+	auto	iMeshes = nif->getIndex( index, "Meshes" );
+	if ( !iMeshes.isValid() )
+		return;
+	for ( int i = 0; i <= 3; i++ ) {
+		if ( !nif->get<bool>( QModelIndex_child( iMeshes, i ), "Has Mesh" ) )
+			continue;
+		QModelIndex	iMesh = nif->getIndex( QModelIndex_child( iMeshes, i ), "Mesh" );
+		if ( !iMesh.isValid() )
+			continue;
+		QModelIndex	iMeshData = nif->getIndex( iMesh, "Mesh Data" );
+		if ( !iMeshData.isValid() )
+			continue;
+
+		QModelIndex	iNormals = nif->getIndex( iMeshData, "Normals" );
+		if ( !( iNormals.isValid() && nif->rowCount( iNormals ) > 0 ) )
+			continue;
+
+		QVector< UDecVector4 >	normals = nif->getArray<UDecVector4>( iNormals );
+		for ( auto & n : normals )
+			( FloatVector4( &(n[0]) ) * -1.0f ).convertToVector3( &(n[0]) );
+		nif->setArray<UDecVector4>( iNormals, normals );
+	}
+}
+
 REGISTER_SPELL( spFlipNormals )
 
 //! Smooths the normals of a mesh
@@ -192,12 +307,21 @@ public:
 
 	bool isApplicable( const NifModel * nif, const QModelIndex & index ) override final
 	{
+		if ( nif->getBSVersion() >= 170 && nif->isNiBlock( index, "BSGeometry" ) )
+			return ( ( nif->get<quint32>(index, "Flags") & 0x0200 ) != 0 );
 		return spFaceNormals::getShapeData( nif, index ).isValid();
 	}
 
+	static void smoothNormalsSFMesh( NifModel * nif, const QModelIndex & index, float maxa, float maxd );
+
 	QModelIndex cast( NifModel * nif, const QModelIndex & index ) override final
 	{
-		QModelIndex iData = spFaceNormals::getShapeData( nif, index );
+		QModelIndex iData;
+		bool isSFMesh = ( nif->getBSVersion() >= 170 && nif->isNiBlock( index, "BSGeometry" ) );
+		if ( !isSFMesh )
+			iData = spFaceNormals::getShapeData( nif, index );
+		else if ( ( nif->get<quint32>( index, "Flags" ) & 0x0200 ) == 0 )
+			return index;
 
 		QVector<Vector3> verts;
 		QVector<Vector3> norms;
@@ -207,7 +331,7 @@ public:
 		if ( nif->getBSVersion() < 100 ) {
 			verts = nif->getArray<Vector3>( iData, "Vertices" );
 			norms = nif->getArray<Vector3>( iData, "Normals" );
-		} else {
+		} else if ( !isSFMesh ) {
 			auto vf = nif->get<BSVertexDesc>( index, "Vertex Desc" );
 			if ( !((vf & VertexFlags::VF_SKINNED) && nif->getBSVersion() == 100) ) {
 				numVerts = nif->get<int>( index, "Num Vertices" );
@@ -229,16 +353,18 @@ public:
 			}
 		}
 
-		if ( nif->isNiBlock(index, "BSDynamicTriShape") ) {
-			auto dynVerts = nif->getArray<Vector4>(index, "Vertices");
-			verts.clear();
-			verts.reserve( numVerts );
-			for ( const auto & v : dynVerts )
-				verts << Vector3(v);
-		}
+		if ( !isSFMesh ) {
+			if ( nif->isNiBlock(index, "BSDynamicTriShape") ) {
+				auto dynVerts = nif->getArray<Vector4>(index, "Vertices");
+				verts.clear();
+				verts.reserve( numVerts );
+				for ( const auto & v : dynVerts )
+					verts << Vector3(v);
+			}
 
-		if ( verts.isEmpty() || verts.count() != norms.count() )
-			return index;
+			if ( verts.isEmpty() || verts.count() != norms.count() )
+				return index;
+		}
 
 		QDialog dlg;
 		dlg.setWindowTitle( Spell::tr( "Smooth Normals" ) );
@@ -257,8 +383,13 @@ public:
 		QDoubleSpinBox * dist = new QDoubleSpinBox;
 		dist->setRange( 0, 1 );
 		dist->setDecimals( 4 );
-		dist->setSingleStep( 0.01 );
-		dist->setValue( 0.001 );
+		if ( !isSFMesh ) {
+			dist->setSingleStep( 0.001 );
+			dist->setValue( 0.035 );
+		} else {
+			dist->setSingleStep( 0.0001 );
+			dist->setValue( 0.0005 );
+		}
 
 		grid->addWidget( new QLabel( Spell::tr( "Max Vertex Distance" ) ), 1, 0 );
 		grid->addWidget( dist, 1, 1 );
@@ -280,6 +411,13 @@ public:
 
 		float maxa = deg2rad( angle->value() );
 		float maxd = dist->value();
+		maxa = float( std::cos( maxa ) );
+		maxd = maxd * maxd;
+
+		if ( isSFMesh ) {
+			smoothNormalsSFMesh( nif, index, maxa, maxd );
+			return index;
+		}
 
 		QVector<Vector3> snorms( norms );
 
@@ -293,7 +431,8 @@ public:
 				if ( ( a - b ).squaredLength() < maxd ) {
 					Vector3 bn = norms[j];
 
-					if ( Vector3::angle( an, bn ) < maxa ) {
+					// NOTE: this assumes normalized normals
+					if ( Vector3::dotproduct( an, bn ) > maxa ) {
 						snorms[i] += bn;
 						snorms[j] += an;
 					}
@@ -318,6 +457,69 @@ public:
 	}
 };
 
+void spSmoothNormals::smoothNormalsSFMesh( NifModel * nif, const QModelIndex & index, float maxa, float maxd )
+{
+	auto	iMeshes = nif->getIndex( index, "Meshes" );
+	if ( !iMeshes.isValid() )
+		return;
+	for ( int i = 0; i <= 3; i++ ) {
+		if ( !nif->get<bool>( QModelIndex_child( iMeshes, i ), "Has Mesh" ) )
+			continue;
+		QModelIndex	iMesh = nif->getIndex( QModelIndex_child( iMeshes, i ), "Mesh" );
+		if ( !iMesh.isValid() )
+			continue;
+		QModelIndex	iMeshData = nif->getIndex( iMesh, "Mesh Data" );
+		if ( !iMeshData.isValid() )
+			continue;
+
+		QModelIndex	iVertices = nif->getIndex( iMeshData, "Vertices" );
+		QModelIndex	iNormals = nif->getIndex( iMeshData, "Normals" );
+		int	numVerts;
+		if ( !( iVertices.isValid() && iNormals.isValid()
+				&& ( numVerts = nif->rowCount( iVertices ) ) > 0 && nif->rowCount( iNormals ) == numVerts ) ) {
+			QMessageBox::critical( nullptr, "NifSkope error", QString("Error calculating normals for mesh %1").arg(i) );
+			continue;
+		}
+
+		QVector< Vector3 >	vertices( nif->getArray<Vector3>( iVertices ) );
+		QVector< UDecVector4 >	normals( nif->getArray<UDecVector4>( iNormals ) );
+		QVector< UDecVector4 >	snorms( normals );
+
+		const Vector3 *	aPtr = vertices.constData();
+		const Vector3 *	endPtr = aPtr + numVerts;
+		const UDecVector4 *	anPtr = normals.constData();
+		for ( ; ( aPtr + 1 ) < endPtr; aPtr++, anPtr++ ) {
+			FloatVector4	a( FloatVector4::convertVector3( &((*aPtr)[0]) ) );
+			FloatVector4	an( &((*anPtr)[0]) );
+
+			const Vector3 *	bPtr = aPtr + 1;
+			for ( ; bPtr < endPtr; bPtr++ ) {
+				FloatVector4	b( FloatVector4::convertVector3( &((*bPtr)[0]) ) );
+				b -= a;
+
+				if ( b.dotProduct3( b ) < maxd ) {
+					const UDecVector4 *	bnPtr = anPtr + size_t( bPtr - aPtr );
+					FloatVector4	bn( &((*bnPtr)[0]) );
+
+					// NOTE: this assumes normalized normals
+					if ( an.dotProduct3( bn ) > maxa ) {
+						int	i = int( anPtr - normals.constData() );
+						int	j = int( bnPtr - normals.constData() );
+						( FloatVector4( &(snorms[i][0]) ) + bn ).convertToFloats( &(snorms[i][0]) );
+						( FloatVector4( &(snorms[j][0]) ) + an ).convertToFloats( &(snorms[j][0]) );
+					}
+				}
+			}
+		}
+
+		for ( auto & n : snorms ) {
+			normalizeUDecVector4( n );
+			n[3] = -1.0f / 3.0f;
+		}
+		nif->setArray<UDecVector4>( iNormals, snorms );
+	}
+}
+
 REGISTER_SPELL( spSmoothNormals )
 
 //! Normalises any single Vector3 or array.
@@ -331,19 +533,36 @@ public:
 
 	bool isApplicable( const NifModel * nif, const QModelIndex & index ) override final
 	{
-		return ( nif->getValue( index ).type() == NifValue::tVector3 )
-		       || ( nif->isArray( index ) && nif->getValue( QModelIndex_child( index ) ).type() == NifValue::tVector3 );
+		NifValue::Type	t;
+		if ( nif->isArray( index ) )
+			t = nif->getValue( QModelIndex_child( index ) ).type();
+		else
+			t = nif->getValue( index ).type();
+		return ( t == NifValue::tVector3 || t == NifValue::tUDecVector4 );
 	}
 
 	QModelIndex cast( NifModel * nif, const QModelIndex & index ) override final
 	{
 		if ( nif->isArray( index ) ) {
-			QVector<Vector3> norms = nif->getArray<Vector3>( index );
+			if ( nif->getValue( QModelIndex_child( index ) ).type() == NifValue::tUDecVector4 ) {
+				QVector<UDecVector4> norms = nif->getArray<UDecVector4>( index );
 
-			for ( int n = 0; n < norms.count(); n++ )
-				norms[n].normalize();
+				for ( auto & n : norms )
+					normalizeUDecVector4( n );
 
-			nif->setArray<Vector3>( index, norms );
+				nif->setArray<UDecVector4>( index, norms );
+			} else {
+				QVector<Vector3> norms = nif->getArray<Vector3>( index );
+
+				for ( int n = 0; n < norms.count(); n++ )
+					norms[n].normalize();
+
+				nif->setArray<Vector3>( index, norms );
+			}
+		} else if ( nif->getValue( index ).type() == NifValue::tUDecVector4 ) {
+			UDecVector4	n = nif->get<UDecVector4>( index );
+			normalizeUDecVector4( n );
+			nif->set<UDecVector4>( index, n );
 		} else {
 			Vector3 n = nif->get<Vector3>( index );
 			n.normalize();

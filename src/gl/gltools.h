@@ -56,7 +56,11 @@ public:
 	BoundSphere( const BoundSphere & );
 	BoundSphere( const NifModel * nif, const QModelIndex & );
 	BoundSphere( const Vector3 & center, float radius );
-	BoundSphere( const QVector<Vector3> & vertices, bool useMiniball = false );
+	BoundSphere( const Vector3 * vertexData, qsizetype vertexCnt, bool useMiniball = false );
+	inline BoundSphere( const QVector<Vector3> & vertices, bool useMiniball = false )
+	{
+		(void) new( this ) BoundSphere( vertices.data(), vertices.size(), useMiniball );
+	}
 
 	Vector3 center;
 	float radius;
@@ -72,6 +76,13 @@ public:
 
 	BoundSphere & apply( const Transform & t );
 	BoundSphere & applyInv( const Transform & t );
+
+	inline bool contains( const Vector3 & v ) const
+	{
+		// assumes non-empty bounds (radius >= 0)
+		FloatVector4	d = FloatVector4( v ) - FloatVector4( center );
+		return ( d.dotProduct3( d ) <= ( radius * radius ) );
+	}
 
 	friend BoundSphere operator*( const Transform & t, const BoundSphere & s );
 };
