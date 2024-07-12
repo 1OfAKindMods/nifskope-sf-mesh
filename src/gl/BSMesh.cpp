@@ -235,6 +235,34 @@ void BSMesh::drawSelection() const
 			s = idx.row();
 		lines( transBitangents, s );
 		lines( transTangents, s, true );
+	} else if ( n == "Skin" ) {
+		auto	iSkin = nif->getBlockIndex( nif->getLink( idx.parent(), "Skin" ) );
+		if ( iSkin.isValid() && nif->isNiBlock( iSkin, "BSSkin::Instance" ) ) {
+			auto	iBoneData = nif->getBlockIndex( nif->getLink( iSkin, "Data" ) );
+			if ( iBoneData.isValid() && nif->isNiBlock( iBoneData, "BSSkin::BoneData" ) ) {
+				auto	iBones = nif->getIndex( iBoneData, "Bone List" );
+				int	numBones;
+				if ( iBones.isValid() && nif->isArray( iBones ) && ( numBones = nif->rowCount( iBones ) ) > 0 ) {
+					for ( int i = 0; i < numBones; i++ ) {
+						auto	iBone = QModelIndex_child( iBones, i );
+						if ( !iBone.isValid() )
+							continue;
+						BoundSphere	sph( nif, iBone );
+						if ( !( sph.radius > 0.0f ) )
+							continue;
+						Transform	t( nif, iBone );
+						sph.center -= t.translation;
+						t.rotation = t.rotation.inverted();
+						t.translation = Vector3( 0.0f, 0.0f, 0.0f );
+						t.scale = 1.0f / t.scale;
+						sph.radius *= t.scale;
+						sph.center = t * sph.center;
+						glColor4f( 1, 1, 1, 0.33f );
+						drawSphereSimple( sph.center, sph.radius, 72 );
+					}
+				}
+			}
+		}
 	} else {
 		int	s = -1;
 		if ( n == p )
@@ -390,7 +418,7 @@ void BSMesh::updateImpl(const NifModel* nif, const QModelIndex& index)
 			auto mesh = std::make_shared<MeshFile>( nif, QModelIndex_child( meshArray, 1 ) );
 			if ( mesh->isValid() ) {
 				meshes.append(mesh);
-				if ( lodLevel > 0 || mesh->lods.size() > 0 )
+				if ( i > 0 || mesh->lods.size() > 0 )
 					emit nif->lodSliderChanged(true);
 			}
 		}
