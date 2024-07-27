@@ -83,7 +83,7 @@ Property * Property::create( Scene * scene, const NifModel * nif, const QModelIn
 	} else if ( nif->isNiBlock( index, "BSWaterShaderProperty" ) ) {
 		property = new BSWaterShaderProperty( scene, index );
 	} else if ( nif->isNiBlock( index, "BSShaderNoLightingProperty" ) ) {
-		property = new BSShaderLightingProperty( scene, index );
+		property = new BSEffectShaderProperty( scene, index );
 	} else if ( nif->isNiBlock( index, "BSShaderPPLightingProperty" ) ) {
 		property = new BSShaderLightingProperty( scene, index );
 	} else if ( index.isValid() ) {
@@ -621,7 +621,11 @@ void MaterialProperty::updateImpl( const NifModel * nif, const QModelIndex & ind
 		if ( alpha > 1.0 )
 			alpha = 1.0;
 
-		ambient  = Color4( nif->get<Color3>( iBlock, "Ambient Color" ) );
+		const NifItem *	i = nif->getItem( iBlock, "Ambient Color" );
+		if ( !i )
+			ambient = Color4();
+		else
+			ambient = Color4( nif->get<Color3>( i ) );
 		diffuse  = Color4( nif->get<Color3>( iBlock, "Diffuse Color" ) );
 		specular = Color4( nif->get<Color3>( iBlock, "Specular Color" ) );
 		emissive = Color4( nif->get<Color3>( iBlock, "Emissive Color" ) );
@@ -852,13 +856,33 @@ void BSShaderLightingProperty::updateImpl( const NifModel * nif, const QModelInd
 	if ( index == iBlock ) {
 		bsVersion = (unsigned short) nif->getBSVersion();
 		if ( bsVersion >= 170 ) {
+			// Starfield
 			setSFMaterial( name );
-		} else {
-			if ( bsVersion < 83 )
-				iSPData = iBlock;
-			else
-				iSPData = nif->getIndex( iBlock, "Shader Property Data" );
+		} else if ( bsVersion >= 83 ) {
+			// Skyrim, Fallout 4, Fallout 76
+			iSPData = nif->getIndex( iBlock, "Shader Property Data" );
 			iTextureSet = nif->getBlockIndex( nif->getLink( iSPData, "Texture Set" ), "BSShaderTextureSet" );
+		} else {
+			// Fallout 3/New Vegas
+			iSPData = iBlock;
+			iTextureSet = nif->getBlockIndex( nif->getLink( iSPData, "Texture Set" ), "BSShaderTextureSet" );
+			flags1 = ShaderFlags::SF1( nif->get<quint32>( iSPData, "Shader Flags" ) );
+			flags2 = ShaderFlags::SF2( nif->get<quint32>( iSPData, "Shader Flags 2" ) );
+			hasVertexColors = bool( flags2 & ShaderFlags::SLSF2_Vertex_Colors );
+			hasVertexAlpha = bool( flags1 & ShaderFlags::SLSF1_Vertex_Alpha );
+			depthTest = bool( flags1 & ShaderFlags::SLSF1_ZBuffer_Test );
+			depthWrite = bool( flags2 & ShaderFlags::SLSF2_ZBuffer_Write );
+			isDoubleSided = bool( flags2 & ShaderFlags::SLSF2_Double_Sided );
+			clampMode = TexClampMode( nif->get<quint32>( iSPData, "Texture Clamp Mode" ) );
+			environmentReflection = nif->get<float>( iSPData, "Environment Map Scale" );
+			if ( typeid( *this ) == typeid( BSEffectShaderProperty ) ) {
+				BSEffectShaderProperty *	esp = static_cast< BSEffectShaderProperty * >( this );
+				esp->falloff.startAngle = nif->get<float>( iSPData, "Falloff Start Angle" );
+				esp->falloff.stopAngle = nif->get<float>( iSPData, "Falloff Stop Angle" );
+				esp->falloff.startOpacity = nif->get<float>( iSPData, "Falloff Start Opacity" );
+				esp->falloff.stopOpacity = nif->get<float>( iSPData, "Falloff Stop Opacity" );
+				esp->useFalloff = true;
+			}
 		}
 	}
 }
@@ -871,6 +895,7 @@ void BSShaderLightingProperty::resetParams()
 	uvScale.reset();
 	uvOffset.reset();
 	clampMode = CLAMP_S_CLAMP_T;
+	environmentReflection = 0.0f;
 
 	hasVertexColors = false;
 	hasVertexAlpha = false;
@@ -1163,7 +1188,7 @@ QString BSShaderLightingProperty::fileName( int id ) const
 	if ( nif ) {
 		switch ( id ) {
 		case 0:
-			return nif->get<QString>( iSPData, "Source Texture" );
+			return nif->get<QString>( iSPData, ( bsVersion >= 83 ? "Source Texture" : "File Name" ) );
 		case 1:
 			return nif->get<QString>( iSPData, "Greyscale Texture" );
 		case 2:
@@ -1288,8 +1313,6 @@ void BSLightingShaderProperty::resetParams()
 
 	lightingEffect1 = 0.0;
 	lightingEffect2 = 1.0;
-
-	environmentReflection = 0.0;
 
 	// Multi-layer properties
 	innerThickness = 1.0;
@@ -1482,6 +1505,8 @@ void BSEffectShaderProperty::updateImpl( const NifModel * nif, const QModelIndex
 	BSShaderLightingProperty::updateImpl( nif, index );
 
 	if ( index == iBlock ) {
+		if ( bsVersion < 83 )
+			return;
 		if ( name.endsWith(".bgem", Qt::CaseInsensitive) && bsVersion < 170 ) {
 			setMaterial( new EffectMaterial( name, nif ) );
 			if ( bsVersion >= 151 )
@@ -1490,9 +1515,9 @@ void BSEffectShaderProperty::updateImpl( const NifModel * nif, const QModelIndex
 			setMaterial( nullptr );
 		}
 		updateParams(nif);
-	}
-	else if ( index == iTextureSet )
+	} else if ( index == iTextureSet ) {
 		updateParams(nif);
+	}
 }
 
 void BSEffectShaderProperty::resetParams()
@@ -1524,7 +1549,6 @@ void BSEffectShaderProperty::resetParams()
 	emissiveMult = 1.0;
 
 	lightingInfluence = 0.0;
-	environmentReflection = 0.0;
 }
 
 void BSEffectShaderProperty::updateParams( const NifModel * nif )
