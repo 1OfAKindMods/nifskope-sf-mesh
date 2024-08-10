@@ -89,6 +89,13 @@ public:
 
 		return nullptr;
 	}
+
+	inline const NifItem * getItem( const NifModel * nif, const char * itemName ) const
+	{
+		if ( nif && iBlock.isValid() )
+			return nif->getItem( iBlock, itemName );
+		return nullptr;
+	}
 };
 
 //! Associate a Property subclass with a Property::Type
@@ -117,12 +124,28 @@ public:
 
 	PropertyList & operator=( const PropertyList & other );
 
-	QList<Property *> list() const { return properties.values(); }
-
 	void merge( const PropertyList & list );
 
 protected:
 	QMultiHash<Property::Type, Property *> properties;
+
+public:
+	inline QMultiHash<Property::Type, Property *>::iterator begin()
+	{
+		return properties.begin();
+	}
+	inline QMultiHash<Property::Type, Property *>::const_iterator begin() const
+	{
+		return properties.cbegin();
+	}
+	inline QMultiHash<Property::Type, Property *>::iterator end()
+	{
+		return properties.end();
+	}
+	inline QMultiHash<Property::Type, Property *>::const_iterator end() const
+	{
+		return properties.cend();
+	}
 };
 
 template <typename T> inline T * PropertyList::get() const
@@ -354,10 +377,10 @@ public:
 
 	friend void glProperty( VertexColorProperty *, bool vertexcolors );
 
-protected:
 	int lightmode = 0;
 	int vertexmode = 0;
 
+protected:
 	void updateImpl( const NifModel * nif, const QModelIndex & index ) override final;
 };
 

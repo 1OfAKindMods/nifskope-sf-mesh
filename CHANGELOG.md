@@ -1,6 +1,23 @@
  == CHANGELOG ==
 
+* Vertex selection has been implemented for Starfield, and the maximum number of shapes supported by vertex selection has been increased from 256 to 32768 for all games.
+* Fixed the 'Add Tangent Spaces and Update' spell for Starfield.
+* Importing OBJ files to Skyrim SE, Fallout 4 and Fallout 76 models now creates BSTriShape geometry instead of NiTriShape.
+* Added support for vertex colors in exported and imported OBJ files (BSTriShape only).
+* Fixes to OBJ import.
+* Disabled some of the spells for newer games where they are not implemented or should not be applicable (e.g. Fallout 4 and newer do not use triangle strips).
+
+#### NifSkope-2.0.dev9-20240804
+
+* Implemented the 'Remove Duplicate Vertices' spell for Starfield, and fixed warnings about missing triangle data for older games.
 * Restored support for Oblivion, Fallout 3 and New Vegas shading.
+* The UV editor now allows selecting Oblivion and Fallout 3/NV texture slots.
+* New render setting for the number of importance samples to use at 512x512 and higher PBR cube map resolutions. The default is 1024, lower values reduce pre-filtering time at the cost of image quality.
+* The view is automatically centered after importing a glTF file.
+* Fixed saving screenshots in WebP, BMP and TGA formats.
+* Fixed crash on double clicking block names in the block list.
+* Fix to issue https://github.com/hexabits/nifskope/issues/68
+* Minor optimizations in the resource manager and renderer.
 
 #### NifSkope-2.0.dev9-20240724
 

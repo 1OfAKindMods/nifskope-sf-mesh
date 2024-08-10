@@ -2,19 +2,16 @@
 
 out vec3 LightDir;
 out vec3 ViewDir;
-out vec3 HalfVector;
 
-out vec4 ColorEA;
-out vec4 ColorD;
+out vec4 C;
+out vec4 D;
+out vec4 A;
 out float toneMapScale;
 
 out vec3 N;
 out vec3 t;
 out vec3 b;
 out vec3 v;
-
-out vec4 A;
-out vec4 D;
 
 void main( void )
 {
@@ -34,12 +31,9 @@ void main( void )
 
 	ViewDir = tbnMatrix * -v.xyz;
 	LightDir = tbnMatrix * gl_LightSource[0].position.xyz;
-	HalfVector = tbnMatrix * gl_LightSource[0].halfVector.xyz;
 
+	C = gl_Color;
+	D = vec4( sqrt(gl_LightSource[0].diffuse.rgb), 1.0 );
+	A = vec4( sqrt(gl_LightSource[0].ambient.rgb) * 0.375, 1.0 );
 	toneMapScale = gl_LightSource[0].ambient.a;
-	A = vec4( sqrt(gl_LightSource[0].ambient.rgb * gl_LightSource[0].diffuse.a) * 0.375, 1.0 );
-	D = vec4( sqrt(gl_LightSource[0].diffuse.rgb * gl_LightSource[0].diffuse.a), 1.0 );
-
-	ColorEA = gl_FrontMaterial.emission + gl_Color * A;
-	ColorD = gl_Color * D;
 }

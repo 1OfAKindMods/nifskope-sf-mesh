@@ -893,7 +893,7 @@ int indexAt( /*GLuint *buffer,*/ NifModel * model, Scene * scene, QList<DrawFunc
 	// Create new FBO with multisampling disabled
 	QOpenGLFramebufferObjectFormat fboFmt;
 	fboFmt.setTextureTarget( GL_TEXTURE_2D );
-	fboFmt.setInternalTextureFormat( GL_RGB32F_ARB );
+	fboFmt.setInternalTextureFormat( GL_RGBA16 );
 	fboFmt.setAttachment( QOpenGLFramebufferObject::Attachment::CombinedDepthStencil );
 
 	QOpenGLFramebufferObject fbo( viewport[2], viewport[3], fboFmt );
@@ -908,6 +908,7 @@ int indexAt( /*GLuint *buffer,*/ NifModel * model, Scene * scene, QList<DrawFunc
 	glDisable( GL_TEXTURE_1D );
 	glDisable( GL_TEXTURE_2D );
 	glDisable( GL_TEXTURE_3D );
+	glDisable( GL_ALPHA_TEST );
 	glDisable( GL_BLEND );
 	glDisable( GL_DITHER );
 	glDisable( GL_FOG );
@@ -915,7 +916,7 @@ int indexAt( /*GLuint *buffer,*/ NifModel * model, Scene * scene, QList<DrawFunc
 	glShadeModel( GL_FLAT );
 	glEnable( GL_DEPTH_TEST );
 	glDepthFunc( GL_LEQUAL );
-	glClearColor( 0.0f, 0.0f, 0.0f, 1.0f );
+	glClearColor( 0.0f, 0.0f, 0.0f, 0.0f );
 	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 
 	// Rasterize the scene
@@ -928,22 +929,21 @@ int indexAt( /*GLuint *buffer,*/ NifModel * model, Scene * scene, QList<DrawFunc
 	fbo.release();
 
 	QImage img( fbo.toImage() );
-	QColor pixel = img.pixel( pos );
+	QColor pixel = img.pixelColor( pos );
 
 #ifndef QT_NO_DEBUG
 	img.save( "fbo.png" );
 #endif
 
 	// Encode RGB to Int
-	int a = 0;
-	a |= pixel.red()   << 0;
-	a |= pixel.green() << 8;
-	a |= pixel.blue()  << 16;
+	FloatVector4	rgba( pixel.redF(), pixel.greenF(), pixel.blueF(), pixel.alphaF() );
+	std::int32_t	a = std::int32_t( std::uint32_t( rgba * 255.0f ) );
 
 	// Decode:
 	// R = (id & 0x000000FF) >> 0
 	// G = (id & 0x0000FF00) >> 8
 	// B = (id & 0x00FF0000) >> 16
+	// A = (id & 0xFF000000) >> 24
 
 	int choose = COLORKEY2ID( a );
 
@@ -1006,7 +1006,7 @@ QModelIndex GLView::indexAt( const QPoint & pos, int cycle )
 	if ( scene->isSelModeVertex() ) {
 		// Vertex
 		int block = choose >> 16;
-		int vert = choose - (block << 16);
+		int vert = choose & 0xFFFF;
 
 		auto shape = scene->shapes.value( block );
 		if ( shape )
@@ -1469,6 +1469,7 @@ void GLView::saveImage()
 		QSettings settings;
 		jpegQuality = settings.value( "JPEG/Quality", 90 ).toInt();
 		imgFormat = settings.value( "Screenshot/Format", 0 ).toInt();
+		imgFormat = std::min< int >( std::max< int >( imgFormat, 0 ), 4 );
 		imgPath = settings.value( "Screenshot/Folder", "screenshots" ).toString();
 	}
 
@@ -1476,7 +1477,10 @@ void GLView::saveImage()
 	QString name = model->getFilename();
 
 	QString nifFolder = model->getFolder();
-	QString filename = name + (!name.isEmpty() ? "_" : "") + date + (imgFormat == 0 ? ".jpg" : ".png");
+	static const char *	screenshotImgFormats[5] = {
+		".jpg", ".png", ".webp", ".bmp", ".tga"
+	};
+	QString filename = name + (!name.isEmpty() ? "_" : "") + date + screenshotImgFormats[imgFormat];
 
 	// Default: NifSkope directory
 	QString nifskopePath = "screenshots/" + filename;
@@ -1485,7 +1489,7 @@ void GLView::saveImage()
 
 	FileSelector * file = new FileSelector( FileSelector::SaveFile, tr( "File" ), QBoxLayout::LeftToRight );
 	file->setParent( dlg );
-	file->setFilter( { "Images (*.jpg *.png *.webp *.bmp)", "JPEG (*.jpg)", "PNG (*.png)", "WebP (*.webp)", "BMP (*.bmp)" } );
+	file->setFilter( { "Images (*.jpg *.png *.webp *.bmp *.tga)", "JPEG (*.jpg)", "PNG (*.png)", "WebP (*.webp)", "BMP (*.bmp)", "TGA (*.tga)" } );
 	file->setFile( imgPath + "/" + filename  );
 	lay->addWidget( file, 0, 0, 1, -1 );
 
@@ -1579,15 +1583,19 @@ void GLView::saveImage()
 	connect( btnOk, &QPushButton::clicked, [&]()
 		{
 			imgPath = file->file();
+			for ( imgFormat = int( sizeof( screenshotImgFormats ) / sizeof( char * ) ); --imgFormat > 0; ) {
+				if ( imgPath.endsWith( screenshotImgFormats[imgFormat], Qt::CaseInsensitive ) )
+					break;
+			}
 #ifdef Q_OS_WIN32
 			imgPath.replace( QChar('\\'), QChar('/') );
 #endif
 			imgPath.truncate( imgPath.lastIndexOf( QChar('/') ) );
-			bool isPNG = file->file().endsWith( ".png", Qt::CaseInsensitive );
+
 			// Save JPEG Quality and other settings
 			QSettings settings;
 			settings.setValue( "JPEG/Quality", pixQuality->value() );
-			settings.setValue( "Screenshot/Format", int(isPNG) );
+			settings.setValue( "Screenshot/Format", imgFormat );
 			if ( !imgPath.isEmpty() )
 				settings.setValue( "Screenshot/Folder", imgPath );
 
@@ -1603,7 +1611,7 @@ void GLView::saveImage()
 
 			QOpenGLFramebufferObjectFormat fboFmt;
 			fboFmt.setTextureTarget( GL_TEXTURE_2D );
-			fboFmt.setInternalTextureFormat( !isPNG ? GL_SRGB8 : GL_SRGB8_ALPHA8 );
+			fboFmt.setInternalTextureFormat( imgFormat != 1 ? GL_SRGB8 : GL_SRGB8_ALPHA8 );
 			fboFmt.setMipmap( false );
 			fboFmt.setAttachment( QOpenGLFramebufferObject::Attachment::Depth );
 			fboFmt.setSamples( 16 / ss );
@@ -1612,7 +1620,7 @@ void GLView::saveImage()
 			fbo.bind();
 
 			const QColor & c = cfg.background;
-			if ( isPNG ) {
+			if ( imgFormat == 1 ) {
 				glClearColor( c.redF(), c.greenF(), c.blueF(), 0.0f );
 				gridDisabled = true;
 			}
@@ -1624,7 +1632,8 @@ void GLView::saveImage()
 			fbo.release();
 
 			QImage fboImg( fbo.toImage() );
-			QImage img( fboImg.constBits(), fboImg.width(), fboImg.height(), ( !isPNG ? QImage::Format_RGB32 : QImage::Format_ARGB32 ) );
+			QImage img( fboImg.constBits(), fboImg.width(), fboImg.height(),
+						( imgFormat != 1 ? QImage::Format_RGB32 : QImage::Format_ARGB32 ) );
 
 			// Return viewport to original size
 			if ( ss > 1 )
@@ -1636,19 +1645,23 @@ void GLView::saveImage()
 			// Set Compression for formats that can use it
 			writer.setCompression( 1 );
 
-			// Handle JPEG/WebP Quality exclusively
-			//	PNG will not use compression if Quality is set
-			if ( file->file().endsWith( ".jpg", Qt::CaseInsensitive ) ) {
-				writer.setFormat( "jpg" );
-				writer.setQuality( 50 + pixQuality->value() / 2 );
+			// Handle JPEG/WebP Quality
+			writer.setFormat( screenshotImgFormats[imgFormat] + 1 );
+			int	q = pixQuality->value();
+			if ( q < 0 )
+				q = 75;
+			switch ( imgFormat ) {
+			case 0:	// JPEG
+				writer.setQuality( 50 + q / 2 );
 				writer.setOptimizedWrite( true );
 				writer.setProgressiveScanWrite( true );
-			} else if ( file->file().endsWith( ".webp", Qt::CaseInsensitive ) ) {
-				writer.setFormat( "webp" );
-				writer.setQuality( 75 + pixQuality->value() / 4 );
-			} else if ( isPNG ) {
-				writer.setFormat( "png" );
-				writer.setQuality( 50 + pixQuality->value() / 2 );
+				break;
+			case 1:	// PNG
+				writer.setQuality( std::max< int >( 100 - q, 0 ) );
+				break;
+			case 2:	// WebP
+				writer.setQuality( 75 + q / 4 );
+				break;
 			}
 
 			if ( writer.write( img ) ) {

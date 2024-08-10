@@ -451,6 +451,8 @@ void Renderer::updateSettings()
 	tmp = settings.value( "Settings/Render/General/Pbr Cube Map Resolution", 1 ).toInt();
 	tmp = std::min< int >( std::max< int >( tmp, 0 ), 4 );
 	TexCache::pbrCubeMapResolution = ( 128 << ( tmp - int(tmp >= 3) ) ) + int( tmp == 3 );	// 128, 256, 512, 513, 1024
+	tmp = settings.value( "Settings/Render/General/Importance Sample Count", 3 ).toInt();
+	TexCache::pbrImportanceSamples = 128 << std::min< int >( std::max< int >( tmp, 0 ), 4 );
 
 	bool prevStatus = shader_ready;
 
@@ -514,10 +516,7 @@ void Renderer::releaseShaders()
 
 QString Renderer::setupProgram( Shape * mesh, const QString & hint )
 {
-	PropertyList props;
-	mesh->activeProperties( props );
-
-	auto nif = NifModel::fromValidIndex(mesh->index());
+	auto nif = NifModel::fromValidIndex( mesh->index() );
 	if ( !shader_ready
 			|| hint.isNull()
 			|| mesh->scene->hasOption(Scene::DisableShaders)
@@ -525,31 +524,57 @@ QString Renderer::setupProgram( Shape * mesh, const QString & hint )
 			|| !nif
 			|| (nif->getBSVersion() == 0)
 	) {
-		setupFixedFunction( mesh, props );
-		return {};
+		setupFixedFunction( mesh );
+		return QString();
+	}
+
+	if ( !hint.isEmpty() ) {
+		Program * program = programs.value( hint );
+		if ( program && program->status ) {
+			fn->glUseProgram( program->id );
+			bool	setupStatus;
+			if ( nif->getBSVersion() >= 170 )
+				setupStatus = setupProgramCE2( nif, program, mesh );
+			else if ( nif->getBSVersion() >= 83 )
+				setupStatus = setupProgramCE1( nif, program, mesh );
+			else
+				setupStatus = setupProgramFO3( nif, program, mesh );
+			if ( setupStatus )
+				return program->name;
+			stopProgram();
+		}
 	}
 
 	QVector<QModelIndex> iBlocks;
 	iBlocks << mesh->index();
 	iBlocks << mesh->iData;
-	for ( Property * p : props.list() ) {
-		iBlocks.append( p->index() );
-	}
+	{
+		PropertyList props;
+		mesh->activeProperties( props );
 
-	if ( !hint.isEmpty() ) {
-		Program * program = programs.value( hint );
-		if ( program && program->status && setupProgram( program, mesh, props, iBlocks, false ) )
-			return program->name;
+		for ( Property * p : props ) {
+			iBlocks.append( p->index() );
+		}
 	}
 
 	for ( Program * program : programs ) {
-		if ( program->status && setupProgram( program, mesh, props, iBlocks ) )
-			return program->name;
+		if ( program->status && program->conditions.eval( nif, iBlocks ) ) {
+			fn->glUseProgram( program->id );
+			bool	setupStatus;
+			if ( nif->getBSVersion() >= 170 )
+				setupStatus = setupProgramCE2( nif, program, mesh );
+			else if ( nif->getBSVersion() >= 83 )
+				setupStatus = setupProgramCE1( nif, program, mesh );
+			else
+				setupStatus = setupProgramFO3( nif, program, mesh );
+			if ( setupStatus )
+				return program->name;
+			stopProgram();
+		}
 	}
 
-	stopProgram();
-	setupFixedFunction( mesh, props );
-	return {};
+	setupFixedFunction( mesh );
+	return QString();
 }
 
 void Renderer::stopProgram()
@@ -838,14 +863,8 @@ static int setFlipbookParameters( const CE2Material::Material & m )
 	return materialFlags;
 }
 
-bool Renderer::setupProgramSF( Program * prog, Shape * mesh )
+bool Renderer::setupProgramCE2( const NifModel * nif, Program * prog, Shape * mesh )
 {
-	auto nif = NifModel::fromValidIndex( mesh->index() );
-	if ( !nif )
-		return false;
-
-	fn->glUseProgram( prog->id );
-
 	auto scene = mesh->scene;
 	auto lsp = mesh->bslsp;
 	if ( !lsp )
@@ -868,12 +887,7 @@ bool Renderer::setupProgramSF( Program * prog, Shape * mesh )
 
 	// texturing
 
-	BSShaderLightingProperty * bsprop = mesh->bssp;
-	if ( !bsprop )
-		return false;
-	// BSShaderLightingProperty * bsprop = props.get<BSShaderLightingProperty>();
-	// TODO: BSLSP has been split off from BSShaderLightingProperty so it needs
-	//	to be accessible from here
+	BSShaderLightingProperty * bsprop = lsp;
 
 	int texunit = 0;
 
@@ -1226,7 +1240,7 @@ bool Renderer::setupProgramSF( Program * prog, Shape * mesh )
 			} else {
 				return false;
 			}
-		} else if ( bsprop ) {
+		} else {
 			int txid = it;
 			if ( txid < 0 )
 				return false;
@@ -1322,123 +1336,46 @@ bool Renderer::setupProgramSF( Program * prog, Shape * mesh )
 	return true;
 }
 
-bool Renderer::setupProgram( Program * prog, Shape * mesh, const PropertyList & props,
-								const QVector<QModelIndex> & iBlocks, bool eval )
+bool Renderer::setupProgramCE1( const NifModel * nif, Program * prog, Shape * mesh )
 {
-	auto nif = NifModel::fromValidIndex( mesh->index() );
-	if ( !nif )
-		return false;
-	if ( eval && !prog->conditions.eval( nif, iBlocks ) )
-		return false;
-	if ( nif->getBSVersion() >= 170 )
-		return setupProgramSF( prog, mesh );
-
-	fn->glUseProgram( prog->id );
-
 	auto nifVersion = nif->getBSVersion();
 	auto scene = mesh->scene;
 	auto lsp = mesh->bslsp;
 	auto esp = mesh->bsesp;
 
-	Material * mat = nullptr;
+	BSShaderLightingProperty * bsprop;
 	if ( lsp )
-		mat = lsp->getMaterial();
+		bsprop = lsp;
 	else if ( esp )
-		mat = esp->getMaterial();
+		bsprop = esp;
+	else
+		return false;
+	Material * mat = bsprop->getMaterial();
 
-	QString default_n = (nifVersion >= 151) ? ::default_ns : ::default_n;
+	const QString & default_n = (nifVersion >= 151) ? ::default_ns : ::default_n;
 
 	// texturing
 
-	TexturingProperty * texprop = props.get<TexturingProperty>();
-	BSShaderLightingProperty * bsprop = mesh->bssp;
-	// BSShaderLightingProperty * bsprop = props.get<BSShaderLightingProperty>();
-	// TODO: BSLSP has been split off from BSShaderLightingProperty so it needs
-	//	to be accessible from here
-
-	TexClampMode clamp = TexClampMode::WRAP_S_WRAP_T;
-	if ( lsp )
-		clamp = lsp->clampMode;
+	TexClampMode clamp = bsprop->clampMode;
 
 	QString	emptyString;
 	int texunit = 0;
-	if ( bsprop ) {
+	if ( lsp ) {
+		// BSLightingShaderProperty
+
 		const QString *	forced = &emptyString;
 		if ( scene->hasOption(Scene::DoLighting) && scene->hasVisMode(Scene::VisNormalsOnly) )
 			forced = &white;
-
 		const QString &	alt = ( !scene->hasOption(Scene::DoErrorColor) ? white : magenta );
-
 		prog->uniSampler( bsprop, SAMP_BASE, 0, texunit, alt, clamp, *forced );
-	} else {
-		GLint uniBaseMap = prog->uniformLocations[SAMP_BASE];
-		if ( uniBaseMap >= 0 && (texprop || (bsprop && lsp)) ) {
-			if ( !activateTextureUnit( texunit ) || (texprop && !texprop->bind( 0 )) )
-				prog->uniSamplerBlank( SAMP_BASE, texunit );
-			else
-				fn->glUniform1i( uniBaseMap, texunit++ );
-		}
-	}
 
-	if ( bsprop && !esp ) {
-		const QString *	forced = &emptyString;
+		forced = &emptyString;
 		if ( !scene->hasOption(Scene::DoLighting) )
-			forced = ( bsprop->bsVersion < 151 ? &default_n : &default_ns );
-		prog->uniSampler( bsprop, SAMP_NORMAL, 1, texunit, emptyString, clamp, *forced );
-	} else if ( !bsprop ) {
-		GLint uniNormalMap = prog->uniformLocations[SAMP_NORMAL];
-		if ( uniNormalMap >= 0 && texprop ) {
-			bool result = true;
-			if ( texprop ) {
-				QString fname = texprop->fileName( 0 );
-				if ( !fname.isEmpty() ) {
-					int pos = fname.lastIndexOf( "_" );
-					if ( pos >= 0 )
-						fname = fname.left( pos ) + "_n.dds";
-					else if ( (pos = fname.lastIndexOf( "." )) >= 0 )
-						fname = fname.insert( pos, "_n" );
-				}
+			forced = &default_n;
+		prog->uniSampler( lsp, SAMP_NORMAL, 1, texunit, emptyString, clamp, *forced );
 
-				if ( !fname.isEmpty() && (!activateTextureUnit( texunit ) || !texprop->bind( 0, fname )) )
-					result = false;
-			}
+		prog->uniSampler( lsp, SAMP_GLOW, 2, texunit, black, clamp );
 
-			if ( !result )
-				prog->uniSamplerBlank( SAMP_NORMAL, texunit );
-			else
-				fn->glUniform1i( uniNormalMap, texunit++ );
-		}
-	}
-
-	if ( bsprop && !esp ) {
-		prog->uniSampler( bsprop, SAMP_GLOW, 2, texunit, black, clamp );
-	} else if ( !bsprop ) {
-		GLint uniGlowMap = prog->uniformLocations[SAMP_GLOW];
-		if ( uniGlowMap >= 0 && texprop ) {
-			bool result = true;
-			if ( texprop ) {
-				QString fname = texprop->fileName( 0 );
-				if ( !fname.isEmpty() ) {
-					int pos = fname.lastIndexOf( "_" );
-					if ( pos >= 0 )
-						fname = fname.left( pos ) + "_g.dds";
-					else if ( (pos = fname.lastIndexOf( "." )) >= 0 )
-						fname = fname.insert( pos, "_g" );
-				}
-
-				if ( !fname.isEmpty() && (!activateTextureUnit( texunit ) || !texprop->bind( 0, fname )) )
-					result = false;
-			}
-
-			if ( !result )
-				prog->uniSamplerBlank( SAMP_GLOW, texunit );
-			else
-				fn->glUniform1i( uniGlowMap, texunit++ );
-		}
-	}
-
-	// BSLightingShaderProperty
-	if ( lsp ) {
 		prog->uni1f( LIGHT_EFF1, lsp->lightingEffect1 );
 		prog->uni1f( LIGHT_EFF2, lsp->lightingEffect2 );
 
@@ -1448,7 +1385,6 @@ bool Renderer::setupProgram( Program * prog, Shape * mesh, const PropertyList & 
 		prog->uni2f( UV_OFFSET, lsp->uvOffset.x, lsp->uvOffset.y );
 
 		prog->uni4m( MAT_VIEW, mesh->viewTrans().toMatrix4() );
-		prog->uni4m( MAT_WORLD, mesh->worldTrans().toMatrix4() );
 
 		prog->uni1i( G2P_COLOR, lsp->greyscaleColor );
 		prog->uniSampler( bsprop, SAMP_GRAYSCALE, 3, texunit, "", TexClampMode::CLAMP_S_CLAMP_T );
@@ -1578,13 +1514,9 @@ bool Renderer::setupProgram( Program * prog, Shape * mesh, const PropertyList & 
 		// Parallax
 		prog->uni1i( HAS_MAP_HEIGHT, lsp->hasHeightMap );
 		prog->uniSampler( bsprop, SAMP_HEIGHT, 3, texunit, gray, clamp );
-	}
 
-
-	// BSEffectShaderProperty
-	if ( esp ) {
-
-		prog->uni4m( MAT_WORLD, mesh->worldTrans().toMatrix4() );
+	} else {
+		// BSEffectShaderProperty
 
 		prog->uni2f( UV_SCALE, esp->uvScale.x, esp->uvScale.y );
 		prog->uni2f( UV_OFFSET, esp->uvOffset.x, esp->uvOffset.y );
@@ -1614,12 +1546,10 @@ bool Renderer::setupProgram( Program * prog, Shape * mesh, const PropertyList & 
 
 		prog->uni1f( FALL_DEPTH, esp->falloff.softDepth );
 
-		// BSEffectShader textures
-		clamp = esp->clampMode;
-		if ( nifVersion >= 83 ) {
-			prog->uniSampler( bsprop, SAMP_BASE, 0, texunit, white, clamp );
-			prog->uniSampler( bsprop, SAMP_GRAYSCALE, 1, texunit, "", TexClampMode::CLAMP_S_CLAMP_T );
-		}
+		// BSEffectShader textures (FIXME: should implement using error color?)
+
+		prog->uniSampler( bsprop, SAMP_BASE, 0, texunit, white, clamp );
+		prog->uniSampler( bsprop, SAMP_GRAYSCALE, 1, texunit, "", TexClampMode::CLAMP_S_CLAMP_T );
 
 		if ( nifVersion >= 130 ) {
 
@@ -1664,20 +1594,312 @@ bool Renderer::setupProgram( Program * prog, Shape * mesh, const PropertyList & 
 		}
 	}
 
-	// Defaults for uniforms in older meshes
-	if ( nifVersion < 83 ) {
-		prog->uni2f( UV_SCALE, 1.0f, 1.0f );
-		prog->uni2f( UV_OFFSET, 0.0f, 0.0f );
-		if ( texprop ) {
-			auto	t = texprop->getTexture( 0 );
-			if ( t ) {
-				// FIXME: rotation is not implemented
-				prog->uni2f( UV_SCALE, t->tiling[0], t->tiling[1] );
-				prog->uni2f( UV_OFFSET, t->translation[0] + ( 0.5f - t->tiling[0] * 0.5f ),
-										t->translation[1] + ( 0.5f - t->tiling[1] * 0.5f ) );
+	prog->uni4m( MAT_WORLD, mesh->worldTrans().toMatrix4() );
+
+	QMapIterator<int, Program::CoordType> itx( prog->texcoords );
+
+	while ( itx.hasNext() ) {
+		itx.next();
+
+		if ( !activateTextureUnit( itx.key() ) )
+			return false;
+
+		auto it = itx.value();
+		if ( it == Program::CT_TANGENT ) {
+			if ( mesh->transTangents.count() ) {
+				glEnableClientState( GL_TEXTURE_COORD_ARRAY );
+				glTexCoordPointer( 3, GL_FLOAT, 0, mesh->transTangents.constData() );
+			} else if ( mesh->tangents.count() ) {
+				glEnableClientState( GL_TEXTURE_COORD_ARRAY );
+				glTexCoordPointer( 3, GL_FLOAT, 0, mesh->tangents.constData() );
+			} else {
+				return false;
 			}
+
+		} else if ( it == Program::CT_BITANGENT ) {
+			if ( mesh->transBitangents.count() ) {
+				glEnableClientState( GL_TEXTURE_COORD_ARRAY );
+				glTexCoordPointer( 3, GL_FLOAT, 0, mesh->transBitangents.constData() );
+			} else if ( mesh->bitangents.count() ) {
+				glEnableClientState( GL_TEXTURE_COORD_ARRAY );
+				glTexCoordPointer( 3, GL_FLOAT, 0, mesh->bitangents.constData() );
+			} else {
+				return false;
+			}
+		} else {
+			int txid = it;
+			if ( txid < 0 )
+				return false;
+
+			int set = 0;
+
+			if ( set < 0 || !(set < mesh->coords.count()) || !mesh->coords[set].count() )
+				return false;
+
+			glEnableClientState( GL_TEXTURE_COORD_ARRAY );
+			glTexCoordPointer( 2, GL_FLOAT, 0, mesh->coords[set].constData() );
 		}
 	}
+
+	if ( mesh->isDoubleSided ) {
+		glDisable( GL_CULL_FACE );
+	} else {
+		glEnable( GL_CULL_FACE );
+		glCullFace( GL_BACK );
+	}
+
+	// setup lighting
+
+	//glEnable( GL_LIGHTING );
+
+	// setup blending
+
+	if ( mat ) {
+		static const GLenum blendMap[11] = {
+			GL_ONE, GL_ZERO, GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR,
+			GL_DST_COLOR, GL_ONE_MINUS_DST_COLOR, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+			GL_DST_ALPHA, GL_ONE_MINUS_DST_ALPHA, GL_SRC_ALPHA_SATURATE
+		};
+
+		if ( mat->hasAlphaBlend() && scene->hasOption(Scene::DoBlending) ) {
+			glEnable( GL_BLEND );
+			glBlendFunc( blendMap[mat->iAlphaSrc], blendMap[mat->iAlphaDst] );
+		} else {
+			glDisable( GL_BLEND );
+		}
+
+		if ( mat->hasAlphaTest() && scene->hasOption(Scene::DoBlending) ) {
+			glEnable( GL_ALPHA_TEST );
+			glAlphaFunc( GL_GREATER, float( mat->iAlphaTestRef ) / 255.0 );
+		} else {
+			glDisable( GL_ALPHA_TEST );
+		}
+
+		if ( mat->bDecal ) {
+			glEnable( GL_POLYGON_OFFSET_FILL );
+			glPolygonOffset( -1.0f, -1.0f );
+		}
+
+	} else {
+		glProperty( mesh->alphaProperty );
+		// BSESP/BSLSP do not always need an NiAlphaProperty, and appear to override it at times
+		if ( mesh->translucent ) {
+			glEnable( GL_BLEND );
+			glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+			// If mesh is alpha tested, override threshold
+			glAlphaFunc( GL_GREATER, 0.1f );
+		}
+	}
+
+	glDisable( GL_COLOR_MATERIAL );
+
+	if ( !mesh->depthTest ) {
+		glDisable( GL_DEPTH_TEST );
+	} else {
+		glEnable( GL_DEPTH_TEST );
+		glDepthFunc( GL_LEQUAL );
+	}
+	glDepthMask( !mesh->depthWrite || mesh->translucent ? GL_FALSE : GL_TRUE );
+	glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
+
+	return true;
+}
+
+bool Renderer::setupProgramFO3( const NifModel * nif, Program * prog, Shape * mesh )
+{
+	auto scene = mesh->scene;
+	auto esp = mesh->bsesp;
+
+	// defaults for uniforms
+	int	vertexColorFlags = 40;	// LIGHT_MODE_EMI_AMB_DIF + VERT_MODE_SRC_AMB_DIF
+	bool	isDecal = false;
+	bool	hasSpecular = ( scene->hasOption( Scene::DoSpecular ) && scene->hasOption( Scene::DoLighting ) );
+	bool	hasEmit = false;
+	bool	hasGlowMap = false;
+	bool	hasCubeMap = ( scene->hasOption( Scene::DoCubeMapping ) && scene->hasOption( Scene::DoLighting ) );
+	bool	hasCubeMask = false;
+	float	cubeMapScale = 1.0f;
+	int	parallaxMaxSteps = 0;
+	float	parallaxScale = 0.03f;
+	float	glowMult = ( scene->hasOption( Scene::DoGlow ) && scene->hasOption( Scene::DoLighting ) ? 1.0f : 0.0f );
+	FloatVector4	glowColor( 1.0f );
+	FloatVector4	uvScaleAndOffset( 1.0f, 1.0f, 0.0f, 0.0f );
+	FloatVector4	uvCenterAndRotation( 0.5f, 0.5f, 0.0f, 0.0f );
+	FloatVector4	falloffParams( 1.0f, 0.0f, 1.0f, 1.0f );
+
+	// texturing
+
+	TexturingProperty * texprop = mesh->findProperty< TexturingProperty >();
+	BSShaderLightingProperty * bsprop = mesh->bssp;
+	if ( !bsprop && !texprop )
+		return false;
+
+	TexClampMode clamp = TexClampMode::WRAP_S_WRAP_T;
+
+	QString	emptyString;
+	int texunit = 0;
+	if ( bsprop ) {
+		clamp = bsprop->clampMode;
+		mesh->depthTest = bsprop->depthTest;
+		mesh->depthWrite = bsprop->depthWrite;
+		const QString *	forced = &emptyString;
+		if ( scene->hasOption(Scene::DoLighting) && scene->hasVisMode(Scene::VisNormalsOnly) )
+			forced = &white;
+
+		const QString &	alt = ( !scene->hasOption(Scene::DoErrorColor) ? white : magenta );
+
+		prog->uniSampler( bsprop, SAMP_BASE, 0, texunit, alt, clamp, *forced );
+	} else {
+		hasCubeMap = false;
+		GLint uniBaseMap = prog->uniformLocations[SAMP_BASE];
+		if ( uniBaseMap >= 0 ) {
+			if ( !activateTextureUnit( texunit ) || !texprop->bind( 0 ) )
+				prog->uniSamplerBlank( SAMP_BASE, texunit );
+			else
+				fn->glUniform1i( uniBaseMap, texunit++ );
+		}
+	}
+
+	if ( bsprop && !esp ) {
+		const QString *	forced = &emptyString;
+		if ( !scene->hasOption(Scene::DoLighting) )
+			forced = &default_n;
+		prog->uniSampler( bsprop, SAMP_NORMAL, 1, texunit, emptyString, clamp, *forced );
+	} else if ( !bsprop ) {
+		GLint uniNormalMap = prog->uniformLocations[SAMP_NORMAL];
+		if ( uniNormalMap >= 0 && activateTextureUnit( texunit ) ) {
+			QString fname = texprop->fileName( 0 );
+			if ( !fname.isEmpty() ) {
+				int pos = fname.lastIndexOf( "_" );
+				if ( pos >= 0 )
+					fname = fname.left( pos ) + "_n.dds";
+				else if ( (pos = fname.lastIndexOf( "." )) >= 0 )
+					fname = fname.insert( pos, "_n" );
+			}
+
+			if ( fname.isEmpty() || !texprop->bind( 0, fname ) ) {
+				texprop->bind( 0, default_n );
+			} else {
+				auto	t = scene->getTextureInfo( fname );
+				if ( t && ( t->format.imageEncoding & TexCache::TexFmt::TEXFMT_DXT1 ) != 0 ) {
+					// disable specular for Oblivion normal maps in BC1 format
+					hasSpecular = false;
+				}
+			}
+			fn->glUniform1i( uniNormalMap, texunit++ );
+		}
+	}
+
+	if ( bsprop && !esp ) {
+		hasGlowMap = !bsprop->fileName( 2 ).isEmpty();
+		prog->uniSampler( bsprop, SAMP_GLOW, 2, texunit, black, clamp );
+
+		// Parallax
+		prog->uniSampler( bsprop, SAMP_HEIGHT, 3, texunit, gray, clamp );
+
+		// Environment Mapping (always bind cube and mask regardless of shader settings)
+
+		GLint uniCubeMap = prog->uniformLocations[SAMP_CUBE];
+		if ( uniCubeMap < 0 ) {
+			hasCubeMap = false;
+		} else {
+			if ( !activateTextureUnit( texunit ) )
+				return false;
+			QString	fname = bsprop->fileName( 4 );
+			if ( hasCubeMap && !fname.isEmpty() )
+				hasCubeMap = bsprop->bindCube( fname );
+			if ( !hasCubeMap )
+				bsprop->bindCube( "#FF555555c" );
+			fn->glUniform1i( uniCubeMap, texunit++ );
+		}
+
+		hasCubeMask = !bsprop->fileName( 5 ).isEmpty();
+		prog->uniSampler( bsprop, SAMP_ENV_MASK, 5, texunit, white, clamp );
+
+	} else if ( !bsprop ) {
+		GLint uniGlowMap = prog->uniformLocations[SAMP_GLOW];
+		if ( uniGlowMap >= 0 && activateTextureUnit( texunit ) ) {
+			bool	result = false;
+			QString fname = texprop->fileName( 0 );
+			if ( !fname.isEmpty() ) {
+				int pos = fname.lastIndexOf( "_" );
+				if ( pos >= 0 )
+					fname = fname.left( pos ) + "_g.dds";
+				else if ( (pos = fname.lastIndexOf( "." )) >= 0 )
+					fname = fname.insert( pos, "_g" );
+			}
+
+			if ( !fname.isEmpty() && texprop->bind( 0, fname ) )
+				result = true;
+
+			hasGlowMap = result;
+			if ( !result )
+				texprop->bind( 0, black );
+			fn->glUniform1i( uniGlowMap, texunit++ );
+		}
+	}
+
+	if ( texprop ) {
+		auto	t = texprop->getTexture( 0 );
+		if ( t && t->hasTransform ) {
+			uvScaleAndOffset = FloatVector4( t->tiling[0], t->tiling[1], t->translation[0], t->translation[1] );
+			uvCenterAndRotation = FloatVector4( t->center[0], t->center[1], t->rotation, 0.0f );
+		}
+		const NifItem *	i = texprop->getItem( nif, "Apply Mode" );
+		if ( i ) {
+			quint32	applyMode = nif->get<quint32>( i );
+			isDecal = ( applyMode == 1 );
+			if ( applyMode == 4 )
+				parallaxMaxSteps = 1;
+		}
+	}
+	if ( bsprop ) {
+		isDecal = bsprop->hasSF1( ShaderFlags::SLSF1_Decal ) | bsprop->hasSF1( ShaderFlags::SLSF1_Dynamic_Decal );
+		hasSpecular = hasSpecular && bsprop->hasSF1( ShaderFlags::SLSF1_Specular );
+		hasCubeMap = hasCubeMap && bsprop->hasSF1( ShaderFlags::SLSF1_Environment_Mapping );
+		cubeMapScale = bsprop->environmentReflection;
+		if ( bsprop->hasSF1( ShaderFlags::SLSF1_Parallax_Occlusion ) ) {
+			const NifItem *	i = bsprop->getItem( nif, "Parallax Max Passes" );
+			if ( i )
+				parallaxMaxSteps = std::max< int >( roundFloat( nif->get<float>(i) ), 4 );
+			i = bsprop->getItem( nif, "Parallax Scale" );
+			if ( i )
+				parallaxScale *= nif->get<float>( i );
+		} else if ( bsprop->hasSF1( ShaderFlags::SLSF1_Parallax ) ) {
+			parallaxMaxSteps = 1;
+		}
+		if ( esp ) {
+			glowMult = 1.0f;
+			falloffParams = FloatVector4( esp->falloff.startAngle, esp->falloff.stopAngle,
+											esp->falloff.startOpacity, esp->falloff.stopOpacity );
+		}
+	} else {
+		hasEmit = true;
+	}
+
+	for ( auto p = mesh->findProperty< VertexColorProperty >(); p; ) {
+		vertexColorFlags = ( ( p->lightmode & 1 ) << 3 ) | ( ( p->vertexmode & 3 ) << 4 );
+		break;
+	}
+	prog->uni1i_l( prog->uniLocation("vertexColorFlags"), vertexColorFlags );
+	prog->uni1b_l( prog->uniLocation("isEffect"), bool(esp) );
+	prog->uni1b_l( prog->uniLocation("hasSpecular"), hasSpecular );
+	prog->uni1b_l( prog->uniLocation("hasEmit"), hasEmit );
+	prog->uni1b_l( prog->uniLocation("hasGlowMap"), hasGlowMap );
+	prog->uni1b_l( prog->uniLocation("hasCubeMap"), hasCubeMap );
+	prog->uni1b_l( prog->uniLocation("hasCubeMask"), hasCubeMask );
+	prog->uni1f_l( prog->uniLocation("cubeMapScale"), cubeMapScale );
+	prog->uni1i_l( prog->uniLocation("parallaxMaxSteps"), parallaxMaxSteps );
+	prog->uni1f_l( prog->uniLocation("parallaxScale"), parallaxScale );
+	prog->uni1f_l( prog->uniLocation("glowMult"), glowMult );
+	prog->uni4f_l( prog->uniLocation("glowColor"), glowColor );
+	prog->uni2f_l( prog->uniLocation("uvCenter"), uvCenterAndRotation[0], uvCenterAndRotation[1] );
+	prog->uni2f_l( prog->uniLocation("uvScale"), uvScaleAndOffset[0], uvScaleAndOffset[1] );
+	prog->uni2f_l( prog->uniLocation("uvOffset"), uvScaleAndOffset[2], uvScaleAndOffset[3] );
+	prog->uni1f_l( prog->uniLocation("uvRotation"), uvCenterAndRotation[2] );
+	prog->uni4f_l( prog->uniLocation("falloffParams"), falloffParams );
+
+	prog->uni4m( MAT_WORLD, mesh->worldTrans().toMatrix4() );
 
 	QMapIterator<int, Program::CoordType> itx( prog->texcoords );
 
@@ -1743,60 +1965,6 @@ bool Renderer::setupProgram( Program * prog, Shape * mesh, const PropertyList & 
 		glCullFace( GL_BACK );
 	}
 
-	// setup lighting
-
-	//glEnable( GL_LIGHTING );
-
-	// setup blending
-
-	if ( mat ) {
-		static const GLenum blendMap[11] = {
-			GL_ONE, GL_ZERO, GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR,
-			GL_DST_COLOR, GL_ONE_MINUS_DST_COLOR, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
-			GL_DST_ALPHA, GL_ONE_MINUS_DST_ALPHA, GL_SRC_ALPHA_SATURATE
-		};
-
-		if ( mat->hasAlphaBlend() && scene->hasOption(Scene::DoBlending) ) {
-			glEnable( GL_BLEND );
-			glBlendFunc( blendMap[mat->iAlphaSrc], blendMap[mat->iAlphaDst] );
-		} else {
-			glDisable( GL_BLEND );
-		}
-
-		if ( mat->hasAlphaTest() && scene->hasOption(Scene::DoBlending) ) {
-			glEnable( GL_ALPHA_TEST );
-			glAlphaFunc( GL_GREATER, float( mat->iAlphaTestRef ) / 255.0 );
-		} else {
-			glDisable( GL_ALPHA_TEST );
-		}
-
-		if ( mat->bDecal ) {
-			glEnable( GL_POLYGON_OFFSET_FILL );
-			glPolygonOffset( -1.0f, -1.0f );
-		}
-
-	} else {
-		glProperty( mesh->alphaProperty );
-		// BSESP/BSLSP do not always need an NiAlphaProperty, and appear to override it at times
-		if ( mesh->translucent ) {
-			glEnable( GL_BLEND );
-			glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
-			// If mesh is alpha tested, override threshold
-			glAlphaFunc( GL_GREATER, 0.1f );
-		}
-		if ( nifVersion < 83 ) {
-			// setup material
-			glProperty( mesh->findProperty< MaterialProperty >(), mesh->findProperty< SpecularProperty >() );
-
-			// setup stencil
-			auto	stencilProperty = mesh->findProperty< StencilProperty >();
-			if ( stencilProperty )
-				glProperty( stencilProperty );
-		}
-	}
-
-	glDisable( GL_COLOR_MATERIAL );
-
 	if ( !mesh->depthTest ) {
 		glDisable( GL_DEPTH_TEST );
 	} else {
@@ -1804,13 +1972,42 @@ bool Renderer::setupProgram( Program * prog, Shape * mesh, const PropertyList & 
 		glDepthFunc( GL_LEQUAL );
 	}
 	glDepthMask( !mesh->depthWrite || mesh->translucent ? GL_FALSE : GL_TRUE );
+
+	// setup blending
+
+	glProperty( mesh->alphaProperty );
+
+	if ( isDecal ) {
+		glEnable( GL_POLYGON_OFFSET_FILL );
+		glPolygonOffset( -1.0f, -1.0f );
+	}
+
+	// setup material
+
+	glProperty( mesh->findProperty< MaterialProperty >(), mesh->findProperty< SpecularProperty >() );
+
+	// setup Z buffer
+
+	for ( auto p = mesh->findProperty< ZBufferProperty >(); p; ) {
+		glProperty( p );
+		break;
+	}
+
+	// setup stencil
+
+	glProperty( mesh->findProperty< StencilProperty >() );
+
+	glDisable( GL_COLOR_MATERIAL );
 	glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
 
 	return true;
 }
 
-void Renderer::setupFixedFunction( Shape * mesh, const PropertyList & props )
+void Renderer::setupFixedFunction( Shape * mesh )
 {
+	PropertyList props;
+	mesh->activeProperties( props );
+
 	// setup lighting
 
 	glEnable( GL_LIGHTING );
@@ -2074,12 +2271,12 @@ void Renderer::drawSkyBox( Scene * scene )
 		-10.0f, -10.0f,  10.0f,   10.0f, -10.0f,  10.0f,  -10.0f,  10.0f,  10.0f,   10.0f,  10.0f,  10.0f
 	};
 
-	if ( !( cfg.cubeBgndMipLevel >= 0 && scene && scene->nifModel && scene->nifModel->getBSVersion() >= 151 ) )
+	if ( cfg.cubeBgndMipLevel < 0 || !scene->nifModel || scene->nifModel->getBSVersion() < 151 || Node::SELECTING )
 		return;
 
 	const NifModel *	nif = scene->nifModel;
 	quint32	bsVersion = nif->getBSVersion();
-	QString	programName = "skybox.prog";
+	static const QString	programName = "skybox.prog";
 	auto	p = programs.cbegin();
 	for ( ; p != programs.cend(); p++ ) {
 		if ( p.key().compare( programName, Qt::CaseInsensitive ) == 0 )
