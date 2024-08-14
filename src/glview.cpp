@@ -244,6 +244,17 @@ GLView::~GLView()
 	delete scene;
 }
 
+float	GLView::Settings::vertexPointSize = 5.0f;
+float	GLView::Settings::tbnPointSize = 7.0f;
+float	GLView::Settings::vertexSelectPointSize = 8.5f;
+float	GLView::Settings::vertexPointSizeSelected = 10.0f;
+float	GLView::Settings::lineWidthAxes = 2.0f;
+float	GLView::Settings::lineWidthWireframe = 1.6f;
+float	GLView::Settings::lineWidthHighlight = 2.5f;
+float	GLView::Settings::lineWidthGrid1 = 1.0f;
+float	GLView::Settings::lineWidthGrid2 = 0.25f;
+float	GLView::Settings::lineWidthSelect = 5.0f;
+
 void GLView::updateSettings()
 {
 	QSettings settings;
@@ -256,6 +267,19 @@ void GLView::updateSettings()
 	cfg.upAxis = UpAxis(settings.value( "General/Up Axis", ZAxis ).toInt());
 
 	settings.endGroup();
+
+	// TODO: make these configurable via the UI
+	double	p = devicePixelRatioF();
+	Settings::vertexPointSize = float( p * 5.0 );
+	Settings::tbnPointSize = float( p * 7.0 );
+	Settings::vertexSelectPointSize = float( p * 8.5 );
+	Settings::vertexPointSizeSelected = float( p * 10.0 );
+	Settings::lineWidthAxes = float( p * 2.0 );
+	Settings::lineWidthWireframe = float( p * 1.6 );
+	Settings::lineWidthHighlight = float( p * 2.5 );
+	Settings::lineWidthGrid1 = float( p * 1.0 );
+	Settings::lineWidthGrid2 = float( p * 0.25 );
+	Settings::lineWidthSelect = float( p * 5.0 );
 }
 
 static bool envMapFileListFilterFunction( void * p, const std::string_view & s )
@@ -532,7 +556,6 @@ void GLView::paintGL()
 		glDepthFunc( GL_LESS );
 		glDisable( GL_TEXTURE_2D );
 		glDisable( GL_NORMALIZE );
-		glLineWidth( 2.0f );
 
 		// Keep the grid "grounded" regardless of Up Axis
 		Transform gridTrans = viewTrans;
@@ -564,9 +587,21 @@ void GLView::paintGL()
 	glPopMatrix();
 #endif
 
-	GLfloat mat_spec[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	FloatVector4	mat_amb( 0.0f, 0.0f, 0.0f, 1.0f );
+	FloatVector4	mat_diff( 0.0f, 0.0f, 0.0f, 1.0f );
+	FloatVector4	mat_spec( 0.0f, 0.0f, 0.0f, 1.0f );
 
-	if ( scene->hasOption(Scene::DoLighting) ) {
+	if ( scene->hasVisMode(Scene::VisSilhouette) ) {
+		if ( !scene->hasOption(Scene::DisableShaders) && scene->nifModel && scene->nifModel->getBSVersion() >= 170 )
+			mat_diff[3] = 0.0f;
+
+		glShadeModel( GL_FLAT );
+		//glEnable( GL_LIGHTING );
+		glEnable( GL_LIGHT0 );
+		glLightModelfv( GL_LIGHT_MODEL_AMBIENT, &(mat_diff[0]) );
+		glMaterialfv( GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, &(mat_diff[0]) );
+
+	} else if ( scene->hasOption(Scene::DoLighting) ) {
 		// Setup light
 		Vector4 lightDir( 0.0, 0.0, 1.0, 0.0 );
 
@@ -587,14 +622,15 @@ void GLView::paintGL()
 				glPushMatrix();
 				glLoadMatrix( viewTrans );
 
-				glLineWidth( 2.0f );
+				glLineWidth( Settings::lineWidthAxes );
 				glColor4f( 1.0f, 1.0f, 1.0f, 0.5f );
 
 				// Scale the distance a bit
-				float l = axis + 64.0;
-				l = (l < 128) ? axis * 1.5 : l;
-				l = (l > 2048) ? axis * 0.66 : l;
-				l = (l > 1024) ? axis * 0.75 : l;
+				float	s = scale() * 64.0f;
+				float	l = axis + s;
+				l = (l < s * 2.0f) ? axis * 1.5f : l;
+				l = (l > s * 32.0f) ? axis * 0.66f : l;
+				l = (l > s * 16.0f) ? axis * 0.75f : l;
 
 				drawDashLine( Vector3( 0, 0, 0 ), v * l, 30 );
 				drawSphere( v * l, axis / 10 );
@@ -609,7 +645,8 @@ void GLView::paintGL()
 		float amb = ambient;
 		if ( scene->hasOption(Scene::DisableShaders) )
 			amb *= 0.375f;
-		GLfloat mat_amb[] = { amb, amb, amb, toneMapping };
+		mat_amb = FloatVector4( amb );
+		mat_amb[3] = toneMapping;
 
 		const FloatVector4	a6( 0.02729229f, -0.03349948f, -0.93633725f, 0.0f );
 		const FloatVector4	a5( 0.18128491f, -0.17835246f, 1.44207620f, 0.0f );
@@ -625,44 +662,31 @@ void GLView::paintGL()
 		c = ( c - d0 ) / ( d1 - d0 );
 		c.maxValues( FloatVector4(0.0f) ).minValues( FloatVector4(1.0f) );
 		c *= brightnessL;
-		GLfloat	mat_diff[] = { c[0], c[1], c[2], brightnessScale };
+		mat_diff = c;
+		mat_diff[3] = brightnessScale;
+		mat_spec = mat_diff;
 
 
 		glShadeModel( GL_SMOOTH );
 		//glEnable( GL_LIGHTING );
 		glEnable( GL_LIGHT0 );
-		glLightfv( GL_LIGHT0, GL_AMBIENT, mat_amb );
-		glLightfv( GL_LIGHT0, GL_DIFFUSE, mat_diff );
-		glLightfv( GL_LIGHT0, GL_SPECULAR, mat_diff );
 		glLightfv( GL_LIGHT0, GL_POSITION, lightDir.data() );
+
 	} else {
 		float amb = scene->hasOption(Scene::DisableShaders) ? 0.0f : 0.5f;
 
-		GLfloat mat_amb[] = { amb, amb, amb, 1.0f };
-		GLfloat mat_diff[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+		mat_amb.blendValues( FloatVector4( amb ), 0x07 );
+		mat_diff = FloatVector4( 1.0f );
 
 
 		glShadeModel( GL_SMOOTH );
 		//glEnable( GL_LIGHTING );
 		glEnable( GL_LIGHT0 );
-		glLightfv( GL_LIGHT0, GL_AMBIENT, mat_amb );
-		glLightfv( GL_LIGHT0, GL_DIFFUSE, mat_diff );
-		glLightfv( GL_LIGHT0, GL_SPECULAR, mat_spec );
 	}
 
-	if ( scene->hasVisMode(Scene::VisSilhouette) ) {
-		GLfloat mat_diff[] = { 0.0f, 0.0f, 0.0f, 1.0f };
-		GLfloat mat_amb[] = { 0.0f, 0.0f, 0.0f, 1.0f };
-
-		glShadeModel( GL_FLAT );
-		//glEnable( GL_LIGHTING );
-		glEnable( GL_LIGHT0 );
-		glLightModelfv( GL_LIGHT_MODEL_AMBIENT, mat_diff );
-		glMaterialfv( GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, mat_diff );
-		glLightfv( GL_LIGHT0, GL_AMBIENT, mat_amb );
-		glLightfv( GL_LIGHT0, GL_DIFFUSE, mat_diff );
-		glLightfv( GL_LIGHT0, GL_SPECULAR, mat_spec );
-	}
+	glLightfv( GL_LIGHT0, GL_AMBIENT, &(mat_amb[0]) );
+	glLightfv( GL_LIGHT0, GL_DIFFUSE, &(mat_diff[0]) );
+	glLightfv( GL_LIGHT0, GL_SPECULAR, &(mat_spec[0]) );
 
 	if ( scene->hasOption(Scene::DoMultisampling) )
 		glEnable( GL_MULTISAMPLE_ARB );
@@ -693,7 +717,7 @@ void GLView::paintGL()
 
 	if ( scene->hasOption(Scene::ShowAxes) ) {
 		// Resize viewport to small corner of screen
-		int axesSize = int( std::lrint( devicePixelRatioF() * std::min( width() / 10, 125 ) ) );
+		int axesSize = int( devicePixelRatioF() * 0.1 * std::min< int >( width(), 1250 ) + 0.5 );
 		glViewport( 0, 0, axesSize, axesSize );
 
 		// Reset matrices
@@ -734,7 +758,8 @@ void GLView::paintGL()
 		glPopMatrix();
 
 		// Restore viewport size
-		glViewport( 0, 0, pixelWidth(), pixelHeight() );
+		QSize	sizeInPixels( getSizeInPixels() );
+		glViewport( 0, 0, sizeInPixels.width(), sizeInPixels.height() );
 		// Restore matrices
 		glProjection();
 	}
@@ -765,12 +790,12 @@ void GLView::paintGL()
 void GLView::resizeGL( int width, int height )
 {
 	double	p = 1.0 / devicePixelRatioF();
-	resize( int( std::lrint( p * width ) ), int( std::lrint( p * height ) ) );
+	resize( int( p * width + 0.5 ), int( p * height + 0.5 ) );
 
 	makeCurrent();
 	if ( !isValid() )
 		return;
-	aspect = (GLdouble)width / (GLdouble)height;
+	aspect = GLdouble(width) / GLdouble(height);
 	glViewport( 0, 0, width, height );
 
 	glDisable(GL_FRAMEBUFFER_SRGB);
@@ -778,9 +803,8 @@ void GLView::resizeGL( int width, int height )
 	update();
 }
 
-void GLView::resizeEvent( QResizeEvent * e )
+void GLView::resizeEvent( [[maybe_unused]] QResizeEvent * e )
 {
-	Q_UNUSED( e );
 	// This function should never be called.
 	// Moved to NifSkope::eventFilter()
 }
@@ -874,7 +898,7 @@ void GLView::setVisMode( Scene::VisMode mode, bool checked )
 
 typedef void (Scene::* DrawFunc)( void );
 
-int indexAt( /*GLuint *buffer,*/ NifModel * model, Scene * scene, QList<DrawFunc> drawFunc, int cycle, const QPoint & pos, int & furn )
+int indexAt( /*GLuint *buffer,*/ NifModel * model, Scene * scene, QList<DrawFunc> drawFunc, int cycle, const QPointF & pos, int & furn )
 {
 	Q_UNUSED( model ); Q_UNUSED( cycle );
 	// Color Key O(1) selection
@@ -927,7 +951,7 @@ int indexAt( /*GLuint *buffer,*/ NifModel * model, Scene * scene, QList<DrawFunc
 	fbo.release();
 
 	QImage img( fbo.toImage() );
-	QColor pixel = img.pixelColor( pos );
+	QColor pixel = img.pixelColor( pos.toPoint() );
 
 #ifndef QT_NO_DEBUG
 	img.save( "fbo.png" );
@@ -959,7 +983,7 @@ int indexAt( /*GLuint *buffer,*/ NifModel * model, Scene * scene, QList<DrawFunc
 	return choose;
 }
 
-QModelIndex GLView::indexAt( const QPoint & pos, int cycle )
+QModelIndex GLView::indexAt( const QPointF & pos, int cycle )
 {
 	if ( !(model && isVisible() && height()) )
 		return QModelIndex();
@@ -974,8 +998,13 @@ QModelIndex GLView::indexAt( const QPoint & pos, int cycle )
 	glMatrixMode( GL_MODELVIEW );
 	glPushMatrix();
 
-	glViewport( 0, 0, pixelWidth(), pixelHeight() );
-	glProjection( pos.x(), pos.y() );
+	double	p = devicePixelRatioF();
+	int	wp = int( p * width() + 0.5 );
+	int	hp = int( p * height() + 0.5 );
+	QPointF	posScaled( pos );
+	posScaled *= p;
+	glViewport( 0, 0, wp, hp );
+	glProjection( int( posScaled.x() + 0.5 ), int( posScaled.y() + 0.5 ) );
 
 	QList<DrawFunc> df;
 
@@ -991,7 +1020,7 @@ QModelIndex GLView::indexAt( const QPoint & pos, int cycle )
 	df << &Scene::drawShapes;
 
 	int choose = -1, furn = -1;
-	choose = ::indexAt( model, scene, df, cycle, pos, /*out*/ furn );
+	choose = ::indexAt( model, scene, df, cycle, posScaled, /*out*/ furn );
 
 	glPopAttrib();
 	glMatrixMode( GL_MODELVIEW );
@@ -1523,17 +1552,18 @@ void GLView::saveImage()
 	btnOneX->setCheckable( true );
 	btnOneX->setChecked( true );
 	// Disable any of these that would exceed the max viewport size of the platform
-	int	w = pixelWidth();
-	int	h = pixelHeight();
-	auto btnTwoX = new QRadioButton( "2x", dlg );
-	btnTwoX->setCheckable( true );
-	btnTwoX->setDisabled( (w * 2) > dims[0] || (h * 2) > dims[1] );
-	auto btnFourX = new QRadioButton( "4x", dlg );
-	btnFourX->setCheckable( true );
-	btnFourX->setDisabled( (w * 4) > dims[0] || (h * 4) > dims[1] );
-	auto btnEightX = new QRadioButton( "8x", dlg );
-	btnEightX->setCheckable( true );
-	btnEightX->setDisabled( (w * 8) > dims[0] || (h * 8) > dims[1] );
+	int	w = width();
+	int	h = height();
+	double	p = devicePixelRatioF();
+	QRadioButton	*btnTwoX, *btnFourX, *btnEightX;
+	for ( int i = 1; i <= 3; i++ ) {
+		QRadioButton* &	b = ( i == 1 ? btnTwoX : ( i == 2 ? btnFourX : btnEightX ) );
+		b = new QRadioButton( ( i == 1 ? "2x" : ( i == 2 ? "4x" : "8x" ) ), dlg );
+		b->setCheckable( true );
+		int	wp = int( p * ( w << i ) + 0.5 );
+		int	hp = int( p * ( h << i ) + 0.5 );
+		b->setDisabled( wp > dims[0] || hp > dims[1] );
+	}
 
 
 	auto grpBox = new QGroupBox( tr( "Image Size" ), dlg );
@@ -1600,11 +1630,11 @@ void GLView::saveImage()
 				settings.setValue( "Screenshot/Folder", imgPath );
 
 			// Supersampling
-			int ss = grpSize->checkedId();
+			int	ss = grpSize->checkedId();
 
 			// Resize viewport for supersampling
 			if ( ss > 1 )
-				resizeGL( w * ss, h * ss );
+				resizeGL( int( p * ( w * ss ) + 0.5 ), int( p * ( h * ss ) + 0.5 ) );
 
 			QOpenGLFramebufferObjectFormat fboFmt;
 			fboFmt.setTextureTarget( GL_TEXTURE_2D );
@@ -1613,7 +1643,8 @@ void GLView::saveImage()
 			fboFmt.setAttachment( QOpenGLFramebufferObject::Attachment::Depth );
 			fboFmt.setSamples( 16 / ss );
 
-			QOpenGLFramebufferObject fbo( w * ss, h * ss, fboFmt );
+			QSize	sizeInPixels( getSizeInPixels() );
+			QOpenGLFramebufferObject fbo( sizeInPixels.width(), sizeInPixels.height(), fboFmt );
 			fbo.bind();
 
 			const QColor & c = cfg.background;
@@ -1634,7 +1665,7 @@ void GLView::saveImage()
 
 			// Return viewport to original size
 			if ( ss > 1 )
-				resizeGL( w, h );
+				resizeGL( int( p * w + 0.5 ), int( p * h + 0.5 ) );
 
 
 			QImageWriter writer( file->file() );
@@ -1719,7 +1750,7 @@ void GLView::dragMoveEvent( QDragMoveEvent * e )
 		fnDragTexOrg = QString();
 	}
 
-	QModelIndex iObj = model->getBlockIndex( indexAt( e->pos() ), "NiAVObject" );
+	QModelIndex iObj = model->getBlockIndex( indexAt( e->posF() ), "NiAVObject" );
 
 	if ( iObj.isValid() ) {
 		for ( const auto l : model->getChildLinks( model->getBlockNumber( iObj ) ) ) {
@@ -1873,10 +1904,13 @@ void GLView::mouseReleaseEvent( QMouseEvent * event )
 		return;
 	}
 
-	auto mods = event->modifiers();
-
-	if ( !(mods & Qt::AltModifier) ) {
-		QModelIndex idx = indexAt( event->pos(), cycleSelect );
+#ifdef Q_OS_LINUX
+	bool	isColorPicker = bool( event->modifiers() & ( Qt::AltModifier | Qt::ControlModifier ) );
+#else
+	bool	isColorPicker = bool( event->modifiers() & Qt::AltModifier );
+#endif
+	if ( !isColorPicker ) {
+		QModelIndex idx = indexAt( event->localPos(), cycleSelect );
 		scene->currentBlock = model->getBlockIndex( idx );
 		scene->currentIndex = idx.sibling( idx.row(), 0 );
 
@@ -1893,7 +1927,8 @@ void GLView::mouseReleaseEvent( QMouseEvent * event )
 		fboFmt.setMipmap( false );
 		fboFmt.setAttachment( QOpenGLFramebufferObject::Attachment::Depth );
 
-		QOpenGLFramebufferObject fbo( pixelWidth(), pixelHeight(), fboFmt );
+		QSize	sizeInPixels( getSizeInPixels() );
+		QOpenGLFramebufferObject fbo( sizeInPixels.width(), sizeInPixels.height(), fboFmt );
 		fbo.bind();
 
 		update();
@@ -1903,7 +1938,7 @@ void GLView::mouseReleaseEvent( QMouseEvent * event )
 
 		QImage * img = new QImage( fbo.toImage() );
 
-		auto what = img->pixel( event->pos() );
+		auto what = img->pixel( ( event->localPos() * devicePixelRatioF() ).toPoint() );
 
 		qglClearColor( QColor( what ) );
 		// qDebug() << QColor( what );
