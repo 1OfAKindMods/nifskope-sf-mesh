@@ -75,7 +75,6 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define BASESIZE 1024.0
 #define GRIDSIZE 16.0
 #define GRIDSEGS 4
-#define ZOOMUNIT -64.0
 #define MINZOOM 0.1
 #define MAXZOOM 20.0
 #define MAXSCALE 10.0
@@ -527,7 +526,9 @@ Vector2 UVWidget::mapToContents( const QPoint & p ) const
 
 QVector<int> UVWidget::indices( const QPoint & p ) const
 {
-	return indices( QRect( p - QPoint( 2, 2 ), QSize( 5, 5 ) ) );
+	int	d = int( devicePixelRatioF() * 5.0 + 0.5 );
+	int	d2 = d >> 1;
+	return indices( QRect( p - QPoint( d2, d2 ), QSize( d, d ) ) );
 }
 
 QVector<int> UVWidget::indices( const QRegion & region ) const
@@ -698,13 +699,10 @@ void UVWidget::mouseMoveEvent( QMouseEvent * e )
 		break;
 
 	case Qt::RightButton:
-		zoom *= 1.0 + ( dPos.y() / ZOOMUNIT );
+		// FIXME: this does not work on Linux because the right button activates the menu instead
+		zoom *= std::pow( GLView::Settings::zoomInScale, double( dPos.y() ) / ( p * 4.0 ) );
 
-		if ( zoom < MINZOOM ) {
-			zoom = MINZOOM;
-		} else if ( zoom > MAXZOOM ) {
-			zoom = MAXZOOM;
-		}
+		zoom = std::min< double >( std::max< double >( zoom, MINZOOM ), MAXZOOM );
 
 		updateViewRect( pixelWidth, pixelHeight );
 
@@ -762,13 +760,9 @@ void UVWidget::wheelEvent( QWheelEvent * e )
 {
 	switch ( e->modifiers() ) {
 	case Qt::NoModifier:
-		zoom *= 1.0 + ( double( e->angleDelta().y() ) / 16.0 ) / ZOOMUNIT;
+		zoom *= std::pow( GLView::Settings::zoomInScale, double( e->angleDelta().y() ) / 60.0 );
 
-		if ( zoom < MINZOOM ) {
-			zoom = MINZOOM;
-		} else if ( zoom > MAXZOOM ) {
-			zoom = MAXZOOM;
-		}
+		zoom = std::min< double >( std::max< double >( zoom, MINZOOM ), MAXZOOM );
 
 		updateViewRect( pixelWidth, pixelHeight );
 
@@ -858,7 +852,10 @@ void UVWidget::setTexturePaths( NifModel * nif, QModelIndex iTexProp )
 		return;
 	}
 
-	iTexPropData = nif->getIndex( iTexProp, "Shader Property Data" );
+	if ( nif->getBSVersion() >= 151 )
+		iTexPropData = nif->getIndex( iTexProp, "Shader Property Data" );
+	else
+		iTexPropData = iTexProp;
 	if ( !iTexPropData.isValid() )
 		return;
 	if ( blockType == "BSLightingShaderProperty" ) {
@@ -1011,6 +1008,12 @@ bool UVWidget::setNifData( NifModel * nifModel, const QModelIndex & nifIndex )
 		if ( !meshes.isValid() )
 			return false;
 
+		int	sfMeshLOD = 0;
+		for ( auto w = dynamic_cast< NifSkope * >( nif->getWindow() ); w; w = nullptr ) {
+			auto	ogl = w->getGLView();
+			if ( ogl && ogl->getScene() )
+				sfMeshLOD = ogl->getScene()->lodLevel;
+		}
 		int	lodDiff = 255;
 		for ( int i = 0; i <= 3; i++ ) {
 			auto mesh = QModelIndex_child( meshes, i );

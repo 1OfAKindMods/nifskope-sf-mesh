@@ -241,7 +241,6 @@ private:
 	ViewState view;
 	DebugMode debugMode;
 	bool perspectiveMode;
-	bool gridDisabled = false;
 
 	class TexCache * textures;
 
@@ -284,6 +283,7 @@ public:
 		float rotSpd = 45;
 
 		UpAxis upAxis = ZAxis;
+		ViewState startupDirection = ViewFront;
 
 		static float	vertexPointSize;
 		static float	tbnPointSize;
@@ -295,6 +295,8 @@ public:
 		static float	lineWidthGrid1;
 		static float	lineWidthGrid2;
 		static float	lineWidthSelect;
+		static float	zoomInScale;
+		static float	zoomOutScale;
 	} cfg;
 
 private slots:

@@ -3,9 +3,19 @@
 ###############################
 
 *msvc* {
-  TEMPLATE = vcapp
+    TEMPLATE = vcapp
+} else {
+    TEMPLATE = app
 }
+
 TARGET   = NifSkope
+
+macx: {
+    QMAKE_CC = clang
+    QMAKE_CXX = clang++
+
+    ICON = res/nifskope.icns
+}
 
 QT += xml opengl network widgets
 
@@ -15,8 +25,12 @@ QT += xml opengl network widgets
 	error("Minimum required version is Qt 5.15")
 }
 
-# C++ Standard Support
-CONFIG += c++20
+# C++ Standard Support (NOTE: c++2a is deprecated by GCC, but is needed for compatibility with Qt 5)
+contains(QT_VERSION, ^6.*) {
+    CONFIG += c++20
+} else:macx {
+    CONFIG += c++2a
+}
 
 # Dependencies
 CONFIG += nvtristrip qhull gli libfo76utils
@@ -35,6 +49,7 @@ CONFIG(debug, debug|release) {
 	CONFIG -= console
 	DEFINES += QT_NO_DEBUG_OUTPUT
 }
+
 # TODO: Get rid of this define
 #	uncomment this if you want the text stats gl option
 #	DEFINES += USE_GL_QPAINTER
@@ -79,6 +94,7 @@ VISUALSTUDIO = false
 	#	They are never used but get auto-generated because of CONFIG += debug_and_release
 	$$VISUALSTUDIO:OUT_PWD = $${_PRO_FILE_PWD_}/bin
 }
+
 
 ###############################
 ## FUNCTIONS
@@ -461,9 +477,9 @@ win32 {
 }
 
 
-# MinGW, GCC
+# MinGW, GCC, Clang
 #  Recommended: GCC 13+
-*-g++ {
+*-g++|*-clang {
 
 	# COMPILER FLAGS
 
@@ -485,10 +501,12 @@ win32 {
 		QMAKE_CXXFLAGS *= -march=sandybridge
 	} else:contains(noavx2, 1) {
 		QMAKE_CXXFLAGS *= -march=sandybridge -mf16c
-	} else {
+	} else:contains(QMAKE_HOST.arch, x86_64) {
 		QMAKE_CXXFLAGS *= -march=haswell
 	}
-	QMAKE_CXXFLAGS *= -mtune=generic
+	contains(QMAKE_HOST.arch, x86_64) {
+		QMAKE_CXXFLAGS *= -mtune=generic
+	}
 }
 
 win32 {
@@ -565,7 +583,6 @@ build_pass|!debug_and_release {
 		
 		imageformats += \
 			$$[QT_INSTALL_PLUGINS]/imageformats/qjpeg$${DLLEXT} \
-			$$[QT_INSTALL_PLUGINS]/imageformats/qtga$${DLLEXT} \
 			$$[QT_INSTALL_PLUGINS]/imageformats/qwebp$${DLLEXT}
 
 		styles += \
@@ -602,4 +619,4 @@ buildMessages:build_pass|buildMessages:!debug_and_release {
 	#message($$CONFIG)
 }
 
-# vim: set filetype=config : 
+# vim: set filetype=config :

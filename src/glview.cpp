@@ -89,10 +89,6 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define ZOOM_MIN 1.0
 #define ZOOM_MAX 1000.0
-#define ZOOM_PAGE_KEY_MULT 1.025
-
-#define ZOOM_QE_KEY_MULT 1.025
-#define ZOOM_MOUSE_WHEEL_MULT 0.95
 
 
 //! @file glview.cpp GLView implementation
@@ -254,6 +250,8 @@ float	GLView::Settings::lineWidthHighlight = 2.5f;
 float	GLView::Settings::lineWidthGrid1 = 1.0f;
 float	GLView::Settings::lineWidthGrid2 = 0.25f;
 float	GLView::Settings::lineWidthSelect = 5.0f;
+float	GLView::Settings::zoomInScale = 0.95f;
+float	GLView::Settings::zoomOutScale = 1.0f / 0.95f;
 
 void GLView::updateSettings()
 {
@@ -265,6 +263,13 @@ void GLView::updateSettings()
 	cfg.moveSpd = settings.value( "General/Camera/Movement Speed" ).toFloat();
 	cfg.rotSpd = settings.value( "General/Camera/Rotation Speed" ).toFloat();
 	cfg.upAxis = UpAxis(settings.value( "General/Up Axis", ZAxis ).toInt());
+	int	z = settings.value( "General/Camera/Startup Direction", 1 ).toInt();
+	static const ViewState	startupDirections[6] = {
+		ViewLeft, ViewFront, ViewTop, ViewRight, ViewBack, ViewBottom
+	};
+	cfg.startupDirection = startupDirections[std::min< int >( std::max< int >( z, 0 ), 5 )];
+	z = settings.value( "General/Camera/Mwheel Zoom Speed", 8 ).toInt();
+	z = std::min< int >( std::max< int >( z, 0 ), 16 );
 
 	settings.endGroup();
 
@@ -280,6 +285,10 @@ void GLView::updateSettings()
 	Settings::lineWidthGrid1 = float( p * 1.0 );
 	Settings::lineWidthGrid2 = float( p * 0.25 );
 	Settings::lineWidthSelect = float( p * 5.0 );
+
+	double	tmp = std::pow( 0.95, std::sqrt( double(1 << z) * (1.0 / 256.0) ) );
+	Settings::zoomInScale = float( tmp );
+	Settings::zoomOutScale = float( 1.0 / tmp );
 }
 
 static bool envMapFileListFilterFunction( void * p, const std::string_view & s )
@@ -546,7 +555,7 @@ void GLView::paintGL()
 	glLoadIdentity();
 
 	// Draw the grid
-	if ( scene->hasOption(Scene::ShowGrid) && !gridDisabled ) {
+	if ( scene->hasOption(Scene::ShowGrid) ) {
 		glDisable( GL_ALPHA_TEST );
 		glDisable( GL_BLEND );
 		glDisable( GL_LIGHTING );
@@ -592,7 +601,7 @@ void GLView::paintGL()
 	FloatVector4	mat_spec( 0.0f, 0.0f, 0.0f, 1.0f );
 
 	if ( scene->hasVisMode(Scene::VisSilhouette) ) {
-		if ( !scene->hasOption(Scene::DisableShaders) && scene->nifModel && scene->nifModel->getBSVersion() >= 170 )
+		if ( !scene->hasOption(Scene::DisableShaders) && scene->nifModel && scene->nifModel->getBSVersion() > 0 )
 			mat_diff[3] = 0.0f;
 
 		glShadeModel( GL_FLAT );
@@ -1132,13 +1141,7 @@ void GLView::setRotation( float x, float y, float z )
 
 void GLView::setZoom( float z )
 {
-	Zoom = z;
-
-	if (Zoom < ZOOM_MIN)
-		Zoom = ZOOM_MIN;
-
-	if (Zoom > ZOOM_MAX)
-		Zoom = ZOOM_MAX;
+	Zoom = std::min< float >( std::max< float >( z, ZOOM_MIN ), ZOOM_MAX );
 
 	update();
 }
@@ -1457,13 +1460,9 @@ void GLView::advanceGears()
 	if ( kbd[ Qt::Key_Q ] ) move( 0, +cfg.moveSpd * dT, 0 );
 	if ( kbd[ Qt::Key_E ] ) move( 0, -cfg.moveSpd * dT, 0 );
 
-	// Zoom
-	//if ( kbd[ Qt::Key_R ] ) setDistance( Dist / ZOOM_QE_KEY_MULT );
-	//if ( kbd[ Qt::Key_F ] ) setDistance( Dist * ZOOM_QE_KEY_MULT );
-
 	// Focal Length
-	if ( kbd[ Qt::Key_PageUp ] )   setZoom( Zoom * ZOOM_PAGE_KEY_MULT );
-	if ( kbd[ Qt::Key_PageDown ] ) setZoom( Zoom / ZOOM_PAGE_KEY_MULT );
+	if ( kbd[ Qt::Key_PageUp ] )   setZoom( Zoom * std::sqrt( Settings::zoomOutScale ) );
+	if ( kbd[ Qt::Key_PageDown ] ) setZoom( Zoom * std::sqrt( Settings::zoomInScale ) );
 
 	if ( mouseMov[0] != 0 || mouseMov[1] != 0 || mouseMov[2] != 0 ) {
 		move( mouseMov[0], mouseMov[1], mouseMov[2] );
@@ -1505,7 +1504,7 @@ void GLView::saveImage()
 
 	QString nifFolder = model->getFolder();
 	static const char *	screenshotImgFormats[5] = {
-		".jpg", ".png", ".webp", ".bmp", ".tga"
+		".jpg", ".png", ".webp", ".bmp", ".dds"
 	};
 	QString filename = name + (!name.isEmpty() ? "_" : "") + date + screenshotImgFormats[imgFormat];
 
@@ -1516,7 +1515,7 @@ void GLView::saveImage()
 
 	FileSelector * file = new FileSelector( FileSelector::SaveFile, tr( "File" ), QBoxLayout::LeftToRight );
 	file->setParent( dlg );
-	file->setFilter( { "Images (*.jpg *.png *.webp *.bmp *.tga)", "JPEG (*.jpg)", "PNG (*.png)", "WebP (*.webp)", "BMP (*.bmp)", "TGA (*.tga)" } );
+	file->setFilter( { "Images (*.jpg *.png *.webp *.bmp *.dds)", "JPEG (*.jpg)", "PNG (*.png)", "WebP (*.webp)", "BMP (*.bmp)", "DDS (*.dds)" } );
 	file->setFile( imgPath + "/" + filename  );
 	lay->addWidget( file, 0, 0, 1, -1 );
 
@@ -1636,66 +1635,117 @@ void GLView::saveImage()
 			if ( ss > 1 )
 				resizeGL( int( p * ( w * ss ) + 0.5 ), int( p * ( h * ss ) + 0.5 ) );
 
-			QOpenGLFramebufferObjectFormat fboFmt;
-			fboFmt.setTextureTarget( GL_TEXTURE_2D );
-			fboFmt.setInternalTextureFormat( imgFormat != 1 ? GL_SRGB8 : GL_SRGB8_ALPHA8 );
-			fboFmt.setMipmap( false );
-			fboFmt.setAttachment( QOpenGLFramebufferObject::Attachment::Depth );
-			fboFmt.setSamples( 16 / ss );
+			QSize	fboSize( getSizeInPixels() );
+			auto	savedSceneOptions = scene->options;
+			auto	savedSceneVisMode = scene->visMode;
+			bool	haveAlpha = ( imgFormat == 1 || imgFormat == 4 );	// PNG or DDS
+			bool	useSilhouette = ( imgFormat == 1 );
+			std::string	err;
 
-			QSize	sizeInPixels( getSizeInPixels() );
-			QOpenGLFramebufferObject fbo( sizeInPixels.width(), sizeInPixels.height(), fboFmt );
-			fbo.bind();
-
+			QImage	rgbImg;
+			QImage	alphaImg;
 			const QColor & c = cfg.background;
-			if ( imgFormat == 1 ) {
-				glClearColor( c.redF(), c.greenF(), c.blueF(), 0.0f );
-				gridDisabled = true;
+			try {
+				for ( int i = 0; i <= int( useSilhouette ); i++ ) {
+					QOpenGLFramebufferObjectFormat fboFmt;
+					fboFmt.setTextureTarget( GL_TEXTURE_2D );
+					fboFmt.setInternalTextureFormat( i == 0 ? GL_SRGB8_ALPHA8 : GL_RGBA8 );
+					fboFmt.setMipmap( false );
+					fboFmt.setAttachment( QOpenGLFramebufferObject::Attachment::Depth );
+					fboFmt.setSamples( 16 / ss );
+
+					QOpenGLFramebufferObject fbo( fboSize.width(), fboSize.height(), fboFmt );
+					fbo.bind();
+
+					if ( haveAlpha ) {
+						if ( !useSilhouette )
+							glClearColor( c.redF(), c.greenF(), c.blueF(), 0.0f );
+						scene->options = savedSceneOptions & ~( Scene::ShowAxes | Scene::ShowGrid );
+						if ( i )
+							scene->visMode = Scene::VisSilhouette;
+					}
+					update();
+					updateGL();
+
+					fbo.release();
+
+					( i == 0 ? rgbImg : alphaImg ) = fbo.toImage();
+				}
+			} catch ( std::exception & e ) {
+				err = e.what();
 			}
-			update();
-			updateGL();
-			gridDisabled = false;
+
+			// Restore settings and return viewport to original size
+			scene->options = savedSceneOptions;
+			scene->visMode = savedSceneVisMode;
 			glClearColor( c.redF(), c.greenF(), c.blueF(), c.alphaF() );
-
-			fbo.release();
-
-			QImage fboImg( fbo.toImage() );
-			QImage img( fboImg.constBits(), fboImg.width(), fboImg.height(),
-						( imgFormat != 1 ? QImage::Format_RGB32 : QImage::Format_ARGB32 ) );
-
-			// Return viewport to original size
 			if ( ss > 1 )
 				resizeGL( int( p * w + 0.5 ), int( p * h + 0.5 ) );
 
-
-			QImageWriter writer( file->file() );
-
-			// Set Compression for formats that can use it
-			writer.setCompression( 1 );
-
-			// Handle JPEG/WebP Quality
-			writer.setFormat( screenshotImgFormats[imgFormat] + 1 );
-			int	q = pixQuality->value();
-			if ( q < 0 )
-				q = 75;
-			switch ( imgFormat ) {
-			case 0:	// JPEG
-				writer.setQuality( 50 + q / 2 );
-				writer.setOptimizedWrite( true );
-				writer.setProgressiveScanWrite( true );
-				break;
-			case 1:	// PNG
-				writer.setQuality( std::max< int >( 100 - q, 0 ) );
-				break;
-			case 2:	// WebP
-				writer.setQuality( 75 + q / 4 );
-				break;
+			if ( !err.empty() ) {
+				QMessageBox::critical( this, "NifSkope error", QString::fromStdString( err ) );
+				return;
 			}
 
-			if ( writer.write( img ) ) {
+			rgbImg.reinterpretAsFormat( !haveAlpha ? QImage::Format_RGB32 : QImage::Format_ARGB32 );
+			int	imgWidth = rgbImg.bytesPerLine() >> 2;
+			int	imgHeight = rgbImg.height();
+
+			for ( int y = 0; useSilhouette && y < imgHeight; y++ ) {
+				// Combine RGB image with alpha mask from silhouette (FIXME: possible byte order issues)
+				if ( !( alphaImg.width() >= rgbImg.width() && y < alphaImg.height() ) ) [[unlikely]]
+					continue;
+				std::uint32_t *	rgbPtr = reinterpret_cast< std::uint32_t * >( rgbImg.scanLine( y ) );
+				const std::uint32_t *	alphaPtr =
+					reinterpret_cast< const std::uint32_t * >( alphaImg.constScanLine( y ) );
+				for ( int x = 0; x < imgWidth; x++ ) {
+					FloatVector4	rgba( rgbPtr + x );
+					FloatVector4	a( alphaPtr + x );
+					rgba[3] = a.dotProduct3( FloatVector4( -1.0f / 3.0f ) ) + 255.0f;
+					rgbPtr[x] = std::uint32_t( rgba );
+				}
+			}
+
+			try {
+				if ( imgFormat != 4 ) {
+					QImageWriter writer( file->file() );
+
+					// Set Compression for formats that can use it
+					writer.setCompression( 1 );
+
+					// Handle JPEG/WebP Quality
+					writer.setFormat( screenshotImgFormats[imgFormat] + 1 );
+					int	q = pixQuality->value();
+					if ( q < 0 )
+						q = 75;
+					switch ( imgFormat ) {
+					case 0:	// JPEG
+						writer.setQuality( 50 + q / 2 );
+						writer.setOptimizedWrite( true );
+						writer.setProgressiveScanWrite( true );
+						break;
+					case 1:	// PNG
+						writer.setCompression( q );
+						break;
+					case 2:	// WebP
+						writer.setQuality( 50 + q / 2 );
+						break;
+					}
+
+					if ( !writer.write( rgbImg ) )
+						throw FO76UtilsError( "%s", writer.errorString().toStdString().c_str() );
+
+				} else {	// DDS
+					DDSOutputFile	writer( file->file().toStdString().c_str(), imgWidth, imgHeight,
+											DDSInputFile::pixelFormatRGBA32 );
+					// TODO: portable handling of byte order
+					writer.writeData( rgbImg.constBits(), size_t( rgbImg.sizeInBytes() ) );
+				}
+
 				dlg->accept();
-			} else {
-				Message::critical( this, tr( "Could not save %1" ).arg( file->file() ) );
+
+			} catch ( std::exception & e ) {
+				QMessageBox::critical( this, "NifSkope error", tr( "Could not save %1: %2" ).arg( file->file() ).arg( e.what() ) );
 			}
 		}
 	);
@@ -1951,14 +2001,13 @@ void GLView::mouseReleaseEvent( QMouseEvent * event )
 
 void GLView::wheelEvent( QWheelEvent * event )
 {
-	if ( view == ViewWalk )
+	if ( view == ViewWalk ) {
 		mouseMov += Vector3( 0, 0, double( event->angleDelta().y() ) / 4.0 ) * scale();
-	else
-	{
+	} else {
 		if (event->angleDelta().y() < 0)
-			setDistance( Dist / ZOOM_MOUSE_WHEEL_MULT );
+			setDistance( Dist * Settings::zoomOutScale );
 		else
-			setDistance( Dist * ZOOM_MOUSE_WHEEL_MULT );
+			setDistance( Dist * Settings::zoomInScale );
 	}
 }
 
