@@ -117,10 +117,10 @@ public:
 	SceneOptions options;
 	inline bool hasOption(SceneOptions optValue) const { return ( options & optValue ); }
 
-	inline int bindTexture( const QString & fname, bool useSecondTexture = false, bool forceTexturing = false )
+	inline int bindTexture( const QStringView & fname, bool forceTexturing = false )
 	{
 		if ( ( forceTexturing || hasOption(DoTexturing) ) && !fname.isEmpty() ) [[likely]]
-			return textures->bind( fname, nifModel, useSecondTexture );
+			return textures->bind( fname, nifModel );
 		return 0;
 	}
 
@@ -131,7 +131,15 @@ public:
 		return 0;
 	}
 
-	inline const TexCache::Tex * getTextureInfo( const QString & fname ) const
+	// flags & 1 = force texturing, flags & 2 = use second texture
+	inline bool bindCube( const QString & fname, int flags = 0 )
+	{
+		if ( ( flags & 1 ) || hasOption(DoTexturing) ) [[likely]]
+			return textures->bindCube( fname, nifModel, bool( flags & 2 ) );
+		return false;
+	}
+
+	inline const TexCache::Tex::ImageInfo * getTextureInfo( const QStringView & fname ) const
 	{
 		return textures->getTextureInfo( fname );
 	}

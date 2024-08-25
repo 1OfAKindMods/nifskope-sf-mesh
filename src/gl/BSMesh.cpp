@@ -55,24 +55,10 @@ void BSMesh::drawShapes( NodeList * secondPass )
 	glEnableClientState(GL_VERTEX_ARRAY);
 	glVertexPointer(3, GL_FLOAT, 0, transVerts.constData());
 
-	if ( Node::SELECTING ) {
-		if ( scene->isSelModeObject() ) {
-			int s_nodeId = ID2COLORKEY(nodeId);
-			glColor4ubv((GLubyte*)&s_nodeId);
-		} else {
-			glColor4f(0, 0, 0, 1);
-		}
-	}
-
-	if ( !Node::SELECTING ) {
+	if ( !Node::SELECTING ) [[likely]] {
 		glEnable(GL_FRAMEBUFFER_SRGB);
 		shader = scene->renderer->setupProgram(this, shader);
 
-	} else {
-		glDisable(GL_FRAMEBUFFER_SRGB);
-	}
-
-	if ( !Node::SELECTING ) {
 		if ( transNorms.count() ) {
 			glEnableClientState(GL_NORMAL_ARRAY);
 			glNormalPointer(GL_FLOAT, 0, transNorms.constData());
@@ -84,13 +70,24 @@ void BSMesh::drawShapes( NodeList * secondPass )
 		} else {
 			glColor(Color3(1.0f, 1.0f, 1.0f));
 		}
-	}
 
-	if ( sortedTriangles.count() )
-		glDrawElements(GL_TRIANGLES, sortedTriangles.count() * 3, GL_UNSIGNED_SHORT, sortedTriangles.constData());
+		if ( sortedTriangles.count() )
+			glDrawElements(GL_TRIANGLES, sortedTriangles.count() * 3, GL_UNSIGNED_SHORT, sortedTriangles.constData());
 
-	if ( !Node::SELECTING )
 		scene->renderer->stopProgram();
+
+	} else {
+		glDisable(GL_FRAMEBUFFER_SRGB);
+
+		if ( scene->isSelModeObject() ) {
+			setColorKeyFromID( nodeId );
+		} else {
+			glColor4f( 0, 0, 0, 1 );
+		}
+
+		if ( sortedTriangles.count() && !drawInSecondPass )
+			glDrawElements(GL_TRIANGLES, sortedTriangles.count() * 3, GL_UNSIGNED_SHORT, sortedTriangles.constData());
+	}
 
 	glDisableClientState(GL_VERTEX_ARRAY);
 	glDisableClientState(GL_NORMAL_ARRAY);
@@ -395,9 +392,7 @@ void BSMesh::drawVerts() const
 	glBegin( GL_POINTS );
 	for ( int i = 0; i < transVerts.count(); i++ ) {
 		if ( Node::SELECTING ) {
-			GLubyte	id[4];
-			FileBuffer::writeUInt32Fast( id, std::uint32_t( ID2COLORKEY( (shapeNumber << 16) + i ) ) );
-			glColor4ubv( id );
+			setColorKeyFromID( ( shapeNumber << 16 ) + i );
 		}
 		glVertex( transVerts.value(i) );
 	}

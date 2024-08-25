@@ -939,7 +939,13 @@ bool BSShaderLightingProperty::getSFTexture( int & texunit, int & texUniform, Fl
 		else
 			c = c + c - 1.0f;					// SNORM
 	}
-	if ( texturePath && !texturePath->empty() && texunit >= 3 && texunit < TexCache::num_texture_units && activateTextureUnit(texunit, true) ) {
+	do {
+		size_t	n;
+		if ( !( texturePath && ( n = texturePath->length() ) > 0 && n <= 1024 ) )
+			break;
+		if ( !( texunit >= 3 && texunit < TexCache::num_texture_units && activateTextureUnit(texunit, true) ) )
+			break;
+
 		TexClampMode	clampMode = TexClampMode::WRAP_S_WRAP_T;
 		if ( uvStream && uvStream->textureAddressMode ) {
 			if ( uvStream->textureAddressMode == 3 ) {
@@ -951,12 +957,20 @@ bool BSShaderLightingProperty::getSFTexture( int & texunit, int & texUniform, Fl
 			else
 				clampMode = TexClampMode::CLAMP_S_CLAMP_T;
 		}
-		if ( bind( QString::fromLatin1(texturePath->data(), qsizetype(texturePath->length())), false, clampMode ) ) {
-			texUniform = texunit - 2;
-			texunit++;
-			return true;
-		}
-	}
+
+		// convert std::string_view to a temporary array of QChar
+		std::uint16_t	tmpBuf[1024];
+		convertStringToUInt16( tmpBuf, texturePath->data(), n );
+
+		if ( !bind( QStringView( tmpBuf, qsizetype( n ) ), false, clampMode ) )
+			break;
+
+		texUniform = texunit - 2;
+		texunit++;
+		return true;
+
+	} while ( false );
+
 	if ( textureReplacementMode > 0 && replUniform ) {
 		texUniform = -1;
 		*replUniform = c;
@@ -1010,9 +1024,9 @@ void BSShaderLightingProperty::loadSFMaterial()
 	const_cast< NifModel * >(nif)->loadSFMaterial( iBlock, ( sf_material_valid ? sf_material : nullptr ) );
 }
 
-bool BSShaderLightingProperty::bind( const QString & fname, bool forceTexturing, TexClampMode mode )
+bool BSShaderLightingProperty::bind( const QStringView & fname, bool forceTexturing, TexClampMode mode )
 {
-	GLuint mipmaps = scene->bindTexture( fname, false, forceTexturing );
+	GLuint mipmaps = scene->bindTexture( fname, forceTexturing );
 
 	if ( !mipmaps )
 		return false;
@@ -1054,31 +1068,6 @@ bool BSShaderLightingProperty::bind( int id, const QVector<QVector<Vector2> > & 
 
 	glDisable( GL_TEXTURE_2D );
 	return false;
-}
-
-bool BSShaderLightingProperty::bindCube( Scene * scene, const QString & fname, bool useSecondTexture )
-{
-	GLuint result = 0;
-
-	if ( !fname.isEmpty() )
-		result = scene->bindTexture( fname, useSecondTexture );
-
-	if ( result == 0 )
-		return false;
-
-	glEnable( GL_TEXTURE_CUBE_MAP_SEAMLESS );
-
-	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
-	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
-	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE );
-	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR );
-	glTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
-	glMatrixMode( GL_TEXTURE );
-	glLoadIdentity();
-	glMatrixMode( GL_MODELVIEW );
-
-	return true;
 }
 
 enum

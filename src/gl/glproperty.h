@@ -41,6 +41,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <QHash>
 #include <QPersistentModelIndex>
 #include <QString>
+#include <QStringView>
 
 
 //! @file glproperty.h Property, PropertyList
@@ -696,16 +697,10 @@ public:
 	void clear() override;
 
 	bool bind( int id, const QVector<QVector<Vector2> > & texcoords );
-	bool bind( const QString & fname, bool forceTexturing, TexClampMode mode = TexClampMode::WRAP_S_WRAP_T );
-	inline bool bind( int id, const QString & fname = QString(), TexClampMode mode = TexClampMode::WRAP_S_WRAP_T )
+	bool bind( const QStringView & fname, bool forceTexturing, TexClampMode mode = TexClampMode::WRAP_S_WRAP_T );
+	inline bool bind( int id, TexClampMode mode = TexClampMode::WRAP_S_WRAP_T )
 	{
-		return bind( ( !fname.isEmpty() ? fname : this->fileName( id ) ), false, mode );
-	}
-
-	static bool bindCube( Scene * scene, const QString & fname, bool useSecondTexture = false );
-	inline bool bindCube( const QString & fname, bool useSecondTexture = false )
-	{
-		return bindCube( scene, fname, useSecondTexture );
+		return bind( this->fileName( id ), false, mode );
 	}
 
 	//! Checks if the params of the shader depend on data from block

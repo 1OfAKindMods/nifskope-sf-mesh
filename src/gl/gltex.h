@@ -38,6 +38,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <QHash>
 #include <QPersistentModelIndex>
 #include <QString>
+#include <QStringView>
 
 
 //! @file gltex.h TexCache etc. header
@@ -88,39 +89,70 @@ public:
 	//! A structure for storing information on a single texture.
 	struct Tex
 	{
-		//! The texture file name.
-		QString filename;
-		//! The texture file path.
-		QString filepath;
-		//! IDs for use with GL texture functions
-		GLuint id[2];
-		//! The format target
-		GLenum target = 0; // = 0x0DE1; // GL_TEXTURE_2D
-		//! Width of the texture
-		GLuint width = 0;
-		//! Height of the texture
-		GLuint height = 0;
-		//! Number of mipmaps present
-		GLuint mipmaps = 0;
-		//! Format of the texture
-		TexFmt format;
-		//! Status messages
-		QString status;
+		struct ImageInfo
+		{
+			//! The texture file name.
+			QString filename;
+			//! The texture file path.
+			QString filepath;
+			//! Width of the texture
+			GLuint width = 0;
+			//! Height of the texture
+			GLuint height = 0;
+			//! Number of mipmaps present
+			GLuint mipmaps = 0;
+			//! Format of the texture
+			TexFmt format;
+			//! Status messages
+			QString status;
 
-		//! Load the texture
-		void load( const NifModel * nif );
+			//! Save the texture as pixel data
+			bool savePixelData( NifModel * nif, QModelIndex & iData ) const;
+		};
+
+		const QChar *	nameData;
+		std::uint16_t	nameLen;
+		std::uint16_t	mipmaps;
+		//! The format target
+		GLenum	target;
+		//! IDs for use with GL texture functions
+		GLuint	id[2];
+		//! Detailed information about the image file
+		ImageInfo *	imageInfo;
+
+		inline Tex()
+		{
+			nameData = nullptr;
+			nameLen = 0;
+			mipmaps = 0;
+			target = 0;	// = 0x0DE1; // GL_TEXTURE_2D
+			id[0] = 0;
+			id[1] = 0;
+			imageInfo = nullptr;
+		}
+
+		inline QStringView filename() const
+		{
+			return QStringView( nameData, nameLen );
+		}
+
+		//! Returns true if loadTex() was called and at least one valid texture ID was generated
+		inline bool isLoaded() const
+		{
+			return bool( ( id[0] + 1U ) & ~1U );
+		}
 
 		//! Save the texture as a file
 		bool saveAsFile( const QModelIndex & index, QString & savepath );
-		//! Save the texture as pixel data
-		bool savePixelData( NifModel * nif, const QModelIndex & iSource, QModelIndex & iData );
 	};
 
 	TexCache( QObject * parent = nullptr );
 	~TexCache();
 
 	//! Bind a texture from filename
-	int bind( const QString & fname, const NifModel * nif = nullptr, bool useSecondTexture = false );
+	int bind( const QStringView & fname, const NifModel * nif = nullptr );
+	//! Bind a cube map from filename
+	bool bindCube( const QString & fname, const NifModel * nif, bool useSecondTexture );
 	//! Bind a texture from pixel data
 	int bind( const QModelIndex & iSource );
 
@@ -163,17 +195,18 @@ public slots:
 	void setNifFolder( const QString & );
 
 protected:
-	QHash<QString, Tex *> textures;
-	QHash<QModelIndex, Tex *> embedTextures;
+	Tex * textures;
+	std::uint32_t textureHashMask;
+	std::uint32_t textureCount;
+	QHash<QModelIndex, Tex> embedTextures;
+
+	inline Tex * insertTex( const QStringView & file );
+	Tex * rehashTextures( Tex * p = nullptr );
+	//! Load the texture
+	static std::uint16_t loadTex( Tex & tx, const NifModel * nif );
 
 public:
-	inline const Tex * getTextureInfo( const QString & file ) const
-	{
-		auto	i = textures.find( file );
-		if ( i == textures.cend() )
-			return nullptr;
-		return i.value();
-	}
+	const Tex::ImageInfo * getTextureInfo( const QStringView & file ) const;
 
 	// returns true if the settings have changed
 	static bool loadSettings( QSettings & settings );

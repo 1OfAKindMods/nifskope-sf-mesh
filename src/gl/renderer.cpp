@@ -657,22 +657,6 @@ bool Renderer::Program::uniSampler( BSShaderLightingProperty * bsprop, UniformTy
 	return true;
 }
 
-bool Renderer::Program::uniSamplerBlank( UniformType var, int & texunit )
-{
-	GLint uniSamp = uniformLocations[var];
-	if ( uniSamp >= 0 ) {
-		if ( !activateTextureUnit( texunit ) )
-			return false;
-
-		glBindTexture( GL_TEXTURE_2D, 0 );
-		f->glUniform1i( uniSamp, texunit++ );
-
-		return true;
-	}
-
-	return true;
-}
-
 inline Renderer::Program::UniformLocationMapItem::UniformLocationMapItem( const char *s, int argsX16Y16 )
 	: fmt( s ), args( std::uint32_t(argsX16Y16) ), l( -1 )
 {
@@ -874,7 +858,7 @@ void Renderer::Program::uniSampler_l( int l, int firstTextureUnit, int textureCn
 	f->glUniform1iv( l, arraySize, tmp );
 }
 
-static int setFlipbookParameters( const CE2Material::Material & m )
+static int setFlipbookParameters( const CE2Material::Material & m, FloatVector4 & uvScaleAndOffset )
 {
 	int	flipbookColumns = std::min< int >( m.flipbookColumns, 127 );
 	int	flipbookRows = std::min< int >( m.flipbookRows, 127 );
@@ -885,9 +869,12 @@ static int setFlipbookParameters( const CE2Material::Material & m )
 	double	flipbookFrame = double( std::chrono::duration_cast< std::chrono::milliseconds >( std::chrono::steady_clock::now().time_since_epoch() ).count() );
 	flipbookFrame = flipbookFrame * flipbookFPMS / double( flipbookFrames );
 	flipbookFrame = flipbookFrame - std::floor( flipbookFrame );
-	int	materialFlags = ( flipbookColumns << 2 ) | ( flipbookRows << 9 );
-	materialFlags = materialFlags | ( std::min< int >( int( flipbookFrame * double( flipbookFrames ) ), flipbookFrames - 1 ) << 16 );
-	return materialFlags;
+	int	n = std::min< int >( int( flipbookFrame * double( flipbookFrames ) ), flipbookFrames - 1 );
+	uvScaleAndOffset += FloatVector4( 0.0f, 0.0f, float(n % flipbookColumns), float(n / flipbookColumns) );
+	float	w = float( flipbookColumns );
+	float	h = float( flipbookRows );
+	uvScaleAndOffset /= FloatVector4( w, h, w, h );
+	return 4;
 }
 
 static inline void setupGLBlendModeSF( int blendMode, QOpenGLFunctions * fn )
@@ -942,17 +929,17 @@ bool Renderer::setupProgramCE2( const NifModel * nif, Program * prog, Shape * me
 	GLint uniCubeMap = prog->uniformLocations[SAMP_CUBE];
 	if ( uniCubeMap < 0 || !activateTextureUnit( texunit ) )
 		return false;
-	hasCubeMap = hasCubeMap && bsprop->bindCube( cfg.cubeMapPathSTF );
+	hasCubeMap = hasCubeMap && scene->bindCube( cfg.cubeMapPathSTF );
 	if ( !hasCubeMap ) [[unlikely]]
-		bsprop->bind( gray, true );
+		scene->bindCube( grayCube, 1 );
 	fn->glUniform1i( uniCubeMap, texunit++ );
 
 	uniCubeMap = prog->uniformLocations[SAMP_CUBE_2];
 	if ( uniCubeMap < 0 || !activateTextureUnit( texunit ) )
 		return false;
-	hasCubeMap = hasCubeMap && bsprop->bindCube( cfg.cubeMapPathSTF, true );
+	hasCubeMap = hasCubeMap && scene->bindCube( cfg.cubeMapPathSTF, 2 );
 	if ( !hasCubeMap ) [[unlikely]]
-		bsprop->bind( gray, true );
+		scene->bindCube( grayCube, 1 );
 	fn->glUniform1i( uniCubeMap, texunit++ );
 
 	prog->uni1i( HAS_MAP_CUBE, hasCubeMap );
@@ -1176,16 +1163,6 @@ bool Renderer::setupProgramCE2( const NifModel * nif, Program * prog, Shape * me
 		if ( !( layerMask & 1 ) )
 			continue;
 		const CE2Material::Layer *	layer = mat->layers[i];
-		if ( layer->material ) {
-			prog->uni4srgb_l( prog->uniLocation("lm.layers[%d].material.color", i), layer->material->color );
-			int	materialFlags = layer->material->colorModeFlags & 3;
-			if ( layer->material->flipbookFlags & 1 ) [[unlikely]]
-				materialFlags = materialFlags | setFlipbookParameters( *(layer->material) );
-			prog->uni1i_l( prog->uniLocation("lm.layers[%d].material.flags", i), materialFlags );
-		} else {
-			prog->uni4f_l( prog->uniLocation("lm.layers[%d].material.color", i), FloatVector4(1.0f) );
-			prog->uni1i_l( prog->uniLocation("lm.layers[%d].material.flags", i), 0 );
-		}
 		for ( int j = 0; j < 11; j++ ) {
 			texUniforms[j] = 0;
 			replUniforms[j] = FloatVector4( 0.0f );
@@ -1224,10 +1201,22 @@ bool Renderer::setupProgramCE2( const NifModel * nif, Program * prog, Shape * me
 		}
 		prog->uni1iv_l( prog->uniLocation("lm.layers[%d].material.textureSet.textures", i), texUniforms, 11 );
 		prog->uni4fv_l( prog->uniLocation("lm.layers[%d].material.textureSet.textureReplacements", i), replUniforms, 11 );
+
 		const CE2Material::UVStream *	uvStream = layer->uvStream;
 		if ( !uvStream )
 			uvStream = &defaultUVStream;
-		prog->uni4f_l( prog->uniLocation("lm.layers[%d].uvStream.scaleAndOffset", i), uvStream->scaleAndOffset );
+		FloatVector4	uvScaleAndOffset( uvStream->scaleAndOffset );
+		if ( layer->material ) [[likely]] {
+			prog->uni4srgb_l( prog->uniLocation("lm.layers[%d].material.color", i), layer->material->color );
+			int	materialFlags = layer->material->colorModeFlags & 3;
+			if ( layer->material->flipbookFlags & 1 ) [[unlikely]]
+				materialFlags = materialFlags | setFlipbookParameters( *(layer->material), uvScaleAndOffset );
+			prog->uni1i_l( prog->uniLocation("lm.layers[%d].material.flags", i), materialFlags );
+		} else {
+			prog->uni4f_l( prog->uniLocation("lm.layers[%d].material.color", i), FloatVector4(1.0f) );
+			prog->uni1i_l( prog->uniLocation("lm.layers[%d].material.flags", i), 0 );
+		}
+		prog->uni4f_l( prog->uniLocation("lm.layers[%d].uvStream.scaleAndOffset", i), uvScaleAndOffset );
 		prog->uni1b_l( prog->uniLocation("lm.layers[%d].uvStream.useChannelTwo", i), (uvStream->channel > 1) );
 
 		const CE2Material::Blender *	blender;
@@ -1496,20 +1485,20 @@ bool Renderer::setupProgramCE1( const NifModel * nif, Program * prog, Shape * me
 				return false;
 			QString	fname = bsprop->fileName( 4 );
 			const QString *	cube = &fname;
-			if ( hasCubeMap && ( fname.isEmpty() || !bsprop->bindCube( fname ) ) ) {
+			if ( hasCubeMap && ( fname.isEmpty() || !scene->bindCube( fname ) ) ) {
 				cube = ( nifVersion < 151 ? ( nifVersion < 128 ? &cube_sk : &cube_fo4 ) : &cfg.cubeMapPathFO76 );
-				hasCubeMap = bsprop->bindCube( *cube );
+				hasCubeMap = scene->bindCube( *cube );
 			}
 			if ( !hasCubeMap ) [[unlikely]]
-				bsprop->bind( gray, true );
+				scene->bindCube( grayCube, 1 );
 			fn->glUniform1i( uniCubeMap, texunit++ );
 			if ( nifVersion >= 151 && ( uniCubeMap = prog->uniformLocations[SAMP_CUBE_2] ) >= 0 ) {
 				// Fallout 76: load second cube map for diffuse lighting
 				if ( !activateTextureUnit( texunit ) )
 					return false;
-				hasCubeMap = hasCubeMap && bsprop->bindCube( *cube, true );
+				hasCubeMap = hasCubeMap && scene->bindCube( *cube, 2 );
 				if ( !hasCubeMap ) [[unlikely]]
-					bsprop->bind( gray, true );
+					scene->bindCube( grayCube, 1 );
 				fn->glUniform1i( uniCubeMap, texunit++ );
 			}
 		}
@@ -1593,10 +1582,10 @@ bool Renderer::setupProgramCE1( const NifModel * nif, Program * prog, Shape * me
 				if ( fname.isEmpty() )
 					fname = cube;
 
-				if ( !activateTextureUnit( texunit ) || !bsprop->bindCube( fname ) )
-					if ( !activateTextureUnit( texunit ) || !bsprop->bindCube( cube ) )
-						return false;
-
+				if ( !activateTextureUnit( texunit ) )
+					return false;
+				if ( !scene->bindCube( fname ) && !scene->bindCube( cube ) && !scene->bindCube( grayCube, 1 ) )
+					return false;
 
 				fn->glUniform1i( uniCubeMap, texunit++ );
 			}
@@ -1771,22 +1760,42 @@ bool Renderer::setupProgramFO3( const NifModel * nif, Program * prog, Shape * me
 	} else {
 		hasCubeMap = false;
 		GLint uniBaseMap = prog->uniformLocations[SAMP_BASE];
-		if ( uniBaseMap >= 0 ) {
-			if ( !activateTextureUnit( texunit ) || !texprop->bind( 0 ) )
-				prog->uniSamplerBlank( SAMP_BASE, texunit );
-			else
-				fn->glUniform1i( uniBaseMap, texunit++ );
+		if ( uniBaseMap >= 0 ) [[likely]] {
+			if ( !activateTextureUnit( texunit ) )
+				return false;
+			if ( !texprop->bind( 0 ) )
+				texprop->bind( 0, ( !scene->hasOption(Scene::DoErrorColor) ? white : magenta ) );
+			fn->glUniform1i( uniBaseMap, texunit++ );
 		}
 	}
 
-	if ( bsprop && !esp ) {
+	GLint	uniCubeMap = prog->uniformLocations[SAMP_CUBE];
+	// always bind a cube map to the cube sampler on texture unit 1 to avoid invalid operation error
+	if ( uniCubeMap >= 0 ) [[likely]] {
+		if ( !activateTextureUnit( texunit ) )
+			return false;
+		QString	fname;
+		if ( hasCubeMap && bsprop && !esp )
+			fname = bsprop->fileName( 4 );
+		if ( fname.isEmpty() || !scene->bindCube( fname ) )
+			hasCubeMap = false;
+		if ( !hasCubeMap )
+			scene->bindCube( grayCube, 1 );
+		fn->glUniform1i( uniCubeMap, texunit++ );
+	} else {
+		hasCubeMap = false;
+	}
+
+	if ( bsprop ) {
 		const QString *	forced = &emptyString;
-		if ( !scene->hasOption(Scene::DoLighting) )
+		if ( esp || !scene->hasOption(Scene::DoLighting) )
 			forced = &default_n;
 		prog->uniSampler( bsprop, SAMP_NORMAL, 1, texunit, emptyString, clamp, *forced );
-	} else if ( !bsprop ) {
+	} else {
 		GLint uniNormalMap = prog->uniformLocations[SAMP_NORMAL];
-		if ( uniNormalMap >= 0 && activateTextureUnit( texunit ) ) {
+		if ( uniNormalMap >= 0 ) {
+			if ( !activateTextureUnit( texunit ) )
+				return false;
 			QString fname = texprop->fileName( 0 );
 			if ( !fname.isEmpty() ) {
 				int pos = fname.lastIndexOf( "_" );
@@ -1809,11 +1818,6 @@ bool Renderer::setupProgramFO3( const NifModel * nif, Program * prog, Shape * me
 		}
 	}
 
-	GLint	uniCubeMap = prog->uniformLocations[SAMP_CUBE];
-	if ( uniCubeMap < 0 )
-		hasCubeMap = false;
-	bool	cubeBound = false;
-
 	if ( bsprop && !esp ) {
 		hasGlowMap = !bsprop->fileName( 2 ).isEmpty();
 		prog->uniSampler( bsprop, SAMP_GLOW, 2, texunit, black, clamp );
@@ -1821,20 +1825,7 @@ bool Renderer::setupProgramFO3( const NifModel * nif, Program * prog, Shape * me
 		// Parallax
 		prog->uniSampler( bsprop, SAMP_HEIGHT, 3, texunit, gray, clamp );
 
-		// Environment Mapping (always bind cube and mask regardless of shader settings)
-
-		if ( uniCubeMap >= 0 ) {
-			if ( !activateTextureUnit( texunit ) )
-				return false;
-			QString	fname = bsprop->fileName( 4 );
-			if ( hasCubeMap && !fname.isEmpty() )
-				hasCubeMap = bsprop->bindCube( fname );
-			if ( !hasCubeMap )
-				bsprop->bindCube( grayCube );
-			fn->glUniform1i( uniCubeMap, texunit++ );
-			cubeBound = true;
-		}
-
+		// Environment Mapping
 		hasCubeMask = !bsprop->fileName( 5 ).isEmpty();
 		prog->uniSampler( bsprop, SAMP_ENV_MASK, 5, texunit, white, clamp );
 
@@ -1861,14 +1852,6 @@ bool Renderer::setupProgramFO3( const NifModel * nif, Program * prog, Shape * me
 		}
 	}
 
-	if ( !cubeBound && uniCubeMap >= 0 ) {
-		// make sure that a cube map is always bound to the cube sampler uniform to avoid invalid operation error
-		if ( !activateTextureUnit( texunit ) )
-			return false;
-		BSShaderLightingProperty::bindCube( scene, grayCube );
-		fn->glUniform1i( uniCubeMap, texunit++ );
-	}
-
 	if ( texprop ) {
 		auto	t = texprop->getTexture( 0 );
 		if ( t && t->hasTransform ) {
@@ -1884,7 +1867,7 @@ bool Renderer::setupProgramFO3( const NifModel * nif, Program * prog, Shape * me
 		}
 	}
 	if ( bsprop ) {
-		isDecal = bsprop->hasSF1( ShaderFlags::SLSF1_Decal ) | bsprop->hasSF1( ShaderFlags::SLSF1_Dynamic_Decal );
+		isDecal = bsprop->hasSF1( ShaderFlags::SF1( ShaderFlags::SLSF1_Decal | ShaderFlags::SLSF1_Dynamic_Decal ) );
 		hasSpecular = hasSpecular && bsprop->hasSF1( ShaderFlags::SLSF1_Specular );
 		hasCubeMap = hasCubeMap && bsprop->hasSF1( ShaderFlags::SLSF1_Environment_Mapping );
 		cubeMapScale = bsprop->environmentReflection;
@@ -2262,12 +2245,9 @@ void Renderer::setupFixedFunction( Shape * mesh )
 		texprop->bind( mesh->coords );
 	} else if ( BSShaderLightingProperty * texprop = props.get<BSShaderLightingProperty>() ) {
 		// standard multi texturing property
-		int stage = 0;
-
 		if ( texprop->bind( 0, mesh->coords ) ) {
 			//, mesh->coords, stage ) )
 			// base
-			stage++;
 			glTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE );
 
 			glTexEnvi( GL_TEXTURE_ENV, GL_COMBINE_RGB, GL_MODULATE );
@@ -2340,21 +2320,10 @@ void Renderer::drawSkyBox( Scene * scene )
 		return;
 	}
 	if ( hasCubeMap )
-		hasCubeMap = scene->bindTexture( bsVersion < 170 ? cfg.cubeMapPathFO76 : cfg.cubeMapPathSTF );
+		hasCubeMap = scene->bindCube( bsVersion < 170 ? cfg.cubeMapPathFO76 : cfg.cubeMapPathSTF );
 	if ( !hasCubeMap )
-		scene->bindTexture( grayCube, false, true );
+		scene->bindCube( grayCube, 1 );
 	fn->glUniform1i( uniCubeMap, texunit++ );
-
-	glEnable( GL_TEXTURE_CUBE_MAP_SEAMLESS );
-	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
-	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
-	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE );
-	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR );
-	glTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
-	glMatrixMode( GL_TEXTURE );
-	glLoadIdentity();
-	glMatrixMode( GL_MODELVIEW );
 
 	prog->uni1i( HAS_MAP_CUBE, hasCubeMap );
 	prog->uni1b( "invertZAxis", ( bsVersion < 170 ) );

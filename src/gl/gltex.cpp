@@ -199,11 +199,18 @@ QString TexCache::TexFmt::toString() const
 
 TexCache::TexCache( QObject * parent ) : QObject( parent )
 {
+	textures = nullptr;
+	textureHashMask = 0;
+	textureCount = 0;
+	rehashTextures();
 }
 
 TexCache::~TexCache()
 {
-	//flush();
+#if 0
+	flush();
+#endif
+	delete[] textures;
 }
 
 QString TexCache::find( const QString & file, const NifModel * nif )
@@ -290,37 +297,161 @@ bool TexCache::isSupported( const QString & filePath )
 	return texIsSupported( filePath );
 }
 
-int TexCache::bind( const QString & fname, const NifModel * nif, bool useSecondTexture )
+const TexCache::Tex::ImageInfo * TexCache::getTextureInfo( const QStringView & file ) const
 {
-	Tex * tx = textures.value( fname );
-	if ( !tx ) [[unlikely]] {
-		tx = new Tex;
-		tx->filename = fname;
-		tx->id[0] = 0;
-		tx->id[1] = 0;
-		tx->mipmaps = 0;
+	if ( file.isEmpty() ) [[unlikely]]
+		return nullptr;
+	const QChar *	s = file.data();
+	size_t	nameLen = size_t( file.size() );
+	std::uint32_t	h = hashFunctionUInt32( s, nameLen * sizeof( QChar ) );
+	std::uint32_t	m = textureHashMask;
+	for ( h = h & m; textures[h].nameLen; h = ( h + 1U ) & m ) {
+		const Tex &	p = textures[h];
+		if ( p.nameLen == nameLen && std::memcmp( p.nameData, s, nameLen * sizeof( QChar ) ) == 0 )
+			return p.imageInfo;
+	}
+	return nullptr;
+}
 
-		textures.insert( tx->filename, tx );
-
-		if ( !isSupported( fname ) ) {
-			tx->id[0] = 0xFFFFFFFF;
-		} else {
-			tx->filepath = find( tx->filename, nif );
-			tx->load( nif );
-			return tx->mipmaps;
-		}
+inline TexCache::Tex * TexCache::insertTex( const QStringView & file )
+{
+	if ( file.isEmpty() ) [[unlikely]]
+		return nullptr;
+	const QChar *	s = file.data();
+	size_t	nameLen = size_t( file.size() );
+	std::uint32_t	h = hashFunctionUInt32( s, nameLen * sizeof( QChar ) );
+	std::uint32_t	m = textureHashMask;
+	for ( h = h & m; textures[h].nameLen; h = ( h + 1U ) & m ) {
+		Tex &	p = textures[h];
+		if ( p.nameLen == nameLen && std::memcmp( p.nameData, s, nameLen * sizeof( QChar ) ) == 0 )
+			return &p;
 	}
 
-	if ( tx->id[0] == 0xFFFFFFFF ) [[unlikely]]
+	if ( std::uint16_t( nameLen ) != nameLen ) [[unlikely]]
+		return nullptr;
+	Tex &	tx = textures[h];
+	tx.imageInfo = new Tex::ImageInfo;
+	tx.imageInfo->filename = file.toString();
+	tx.nameData = tx.imageInfo->filename.constData();
+	tx.nameLen = std::uint16_t( nameLen );
+
+	textureCount++;
+	if ( ( std::uint64_t(textureCount) * 3U ) > ( std::uint64_t(textureHashMask) * 2U ) )
+		return rehashTextures( &tx );
+
+	return &tx;
+}
+
+TexCache::Tex * TexCache::rehashTextures( Tex * p )
+{
+	std::uint32_t	prvMask = textureHashMask;
+	std::uint32_t	m = ( prvMask << 1 ) | 15U;
+	size_t	n = size_t( m ) + 1;
+	Tex *	newTextures = new Tex[n];
+	Tex *	q = nullptr;
+	if ( textureCount ) {
+		for ( size_t i = 0; i <= prvMask; i++ ) {
+			Tex &	tx = textures[i];
+			if ( tx.nameLen ) {
+				std::uint32_t	h = hashFunctionUInt32( tx.nameData, size_t( tx.nameLen ) * sizeof( QChar ) ) & m;
+				while ( newTextures[h].nameLen )
+					h = ( h + 1U ) & m;
+				newTextures[h] = tx;
+				if ( p == &tx ) [[unlikely]]
+					q = newTextures + h;
+			}
+		}
+	}
+	delete[] textures;
+	textures = newTextures;
+	textureHashMask = m;
+	return q;
+}
+
+int TexCache::bind( const QStringView & fname, const NifModel * nif )
+{
+	Tex *	tx = insertTex( fname );
+	if ( !tx ) [[unlikely]]
 		return 0;
-	if ( !tx->id[size_t(useSecondTexture)] ) [[unlikely]]
-		return 0;
+	if ( !tx->isLoaded() ) [[unlikely]] {
+		if ( tx->id[0] )
+			return 0;
+
+		return loadTex( *tx, nif );
+	}
 
 	if ( !tx->target ) [[unlikely]]
 		tx->target = GL_TEXTURE_2D;
-	glBindTexture( tx->target, tx->id[size_t(useSecondTexture)] );
+	glBindTexture( tx->target, tx->id[0] );
 
 	return tx->mipmaps;
+}
+
+bool TexCache::bindCube( const QString & fname, const NifModel * nif, bool useSecondTexture )
+{
+	Tex *	tx = insertTex( fname );
+	if ( !tx ) [[unlikely]]
+		return false;
+
+	if ( !tx->isLoaded() ) [[unlikely]] {
+		if ( tx->id[0] || !loadTex( *tx, nif ) )
+			return false;
+	} else {
+		if ( !tx->id[size_t(useSecondTexture)] ) [[unlikely]]
+			return false;
+
+		if ( !tx->target ) [[unlikely]]
+			tx->target = GL_TEXTURE_CUBE_MAP;
+	}
+
+	glBindTexture( tx->target, tx->id[size_t(useSecondTexture)] );
+
+	if ( !tx->mipmaps ) [[unlikely]]
+		return false;
+
+	glEnable( GL_TEXTURE_CUBE_MAP_SEAMLESS );
+
+	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE );
+	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+	glTexParameteri( GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR );
+	glTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
+	glMatrixMode( GL_TEXTURE );
+	glLoadIdentity();
+	glMatrixMode( GL_MODELVIEW );
+
+	return true;
+}
+
+std::uint16_t TexCache::loadTex( Tex & tx, const NifModel * nif )
+{
+	Tex::ImageInfo *	i = tx.imageInfo;
+
+	if ( !isSupported( i->filename ) ) {
+		tx.id[0] = GLuint( -1 );
+		return 0;
+	}
+
+	i->filepath = find( i->filename, nif );
+
+	if ( !tx.id[0] )
+		glGenTextures( 1, tx.id );
+
+	if ( tx.target )
+		glBindTexture( tx.target, tx.id[0] );
+
+	try
+	{
+		i->mipmaps = texLoad( nif, i->filepath, i->format, tx.target, i->width, i->height, tx.id );
+		tx.mipmaps = std::uint16_t( i->mipmaps );
+	}
+	catch ( QString & e )
+	{
+		i->status = e;
+	}
+
+	return tx.mipmaps;
 }
 
 int TexCache::bind( const QModelIndex & iSource )
@@ -331,27 +462,27 @@ int TexCache::bind( const QModelIndex & iSource )
 			QModelIndex iData = nif->getBlockIndex( nif->getLink( iSource, "Pixel Data" ) );
 
 			if ( iData.isValid() ) {
-				Tex * tx = embedTextures.value( iData );
+				Tex &	tx = embedTextures[iData];
+				Tex::ImageInfo *	i = tx.imageInfo;
 
-				if ( !tx ) {
-					tx = new Tex();
-					tx->id[0] = 0;
-					tx->id[1] = 0;
+				if ( !i ) {
+					i = new Tex::ImageInfo;
+					tx.imageInfo = i;
 					try
 					{
-						glGenTextures( 1, tx->id );
-						glBindTexture( GL_TEXTURE_2D, tx->id[0] );
-						embedTextures.insert( iData, tx );
-						texLoad( iData, tx->format, tx->target, tx->width, tx->height, tx->mipmaps, tx->id );
+						glGenTextures( 1, tx.id );
+						glBindTexture( GL_TEXTURE_2D, tx.id[0] );
+						i->mipmaps = texLoad( iData, i->format, tx.target, i->width, i->height, tx.id );
+						tx.mipmaps = std::uint16_t( i->mipmaps );
 					}
 					catch ( QString & e ) {
-						tx->status = e;
+						i->status = e;
 					}
 				} else {
-					glBindTexture( GL_TEXTURE_2D, tx->id[0] );
+					glBindTexture( GL_TEXTURE_2D, tx.id[0] );
 				}
 
-				return tx->mipmaps;
+				return tx.mipmaps;
 			}
 		} else if ( !nif->get<QString>( iSource, "File Name" ).isEmpty() ) {
 			return bind( nif->get<QString>( iSource, "File Name" ), nif );
@@ -363,18 +494,23 @@ int TexCache::bind( const QModelIndex & iSource )
 
 void TexCache::flush()
 {
-	for ( Tex * tx : textures ) {
-		if ( tx->id[0] )
-			glDeleteTextures( ( !tx->id[1] ? 1 : 2 ), tx->id );
+	for ( size_t i = 0; i <= textureHashMask; i++ ) {
+		Tex &	tx = textures[i];
+		if ( tx.isLoaded() )
+			glDeleteTextures( ( !tx.id[1] ? 1 : 2 ), tx.id );
+		if ( tx.imageInfo )
+			delete tx.imageInfo;
 	}
-	qDeleteAll( textures );
-	textures.clear();
+	textureHashMask = 0;
+	textureCount = 0;
+	rehashTextures();
 
-	for ( Tex * tx : embedTextures ) {
-		if ( tx->id[0] )
-			glDeleteTextures( ( !tx->id[1] ? 1 : 2 ), tx->id );
+	for ( Tex & tx : embedTextures ) {
+		if ( tx.id[0] )
+			glDeleteTextures( ( !tx.id[1] ? 1 : 2 ), tx.id );
+		if ( tx.imageInfo )
+			delete tx.imageInfo;
 	}
-	qDeleteAll( embedTextures );
 	embedTextures.clear();
 }
 
@@ -394,26 +530,32 @@ QString TexCache::info( const QModelIndex & iSource )
 		if ( nif->get<quint8>( iSource, "Use External" ) == 0 ) {
 			QModelIndex iData = nif->getBlockIndex( nif->getLink( iSource, "Pixel Data" ) );
 
-			if ( iData.isValid() ) {
-				Tex * tx = embedTextures.value( iData );
+			const Tex::ImageInfo *	i = nullptr;
+			if ( iData.isValid() )
+				i = embedTextures.value( iData ).imageInfo;
+			if ( i ) {
 				temp = QString( "Embedded texture: %1\nWidth: %2\nHeight: %3\nMipmaps: %4" )
-						.arg( tx->format.toString() )
-						.arg( tx->width )
-						.arg( tx->height )
-						.arg( tx->mipmaps );
+						.arg( i->format.toString() )
+						.arg( i->width )
+						.arg( i->height )
+						.arg( i->mipmaps );
 			} else {
 				temp = QString( "Embedded texture invalid" );
 			}
 		} else {
 			QString filename = nif->get<QString>( iSource, "File Name" );
-			Tex * tx = textures.value( filename );
-			temp = QString( "External texture file: %1\nTexture path: %2\nFormat: %3\nWidth: %4\nHeight: %5\nMipmaps: %6" )
-					.arg( tx->filename )
-					.arg( tx->filepath )
-					.arg( tx->format.toString() )
-					.arg( tx->width )
-					.arg( tx->height )
-					.arg( tx->mipmaps );
+			const Tex::ImageInfo *	i = getTextureInfo( filename );
+			if ( i ) {
+				temp = QString( "External texture file: %1\nTexture path: %2\nFormat: %3\nWidth: %4\nHeight: %5\nMipmaps: %6" )
+						.arg( i->filename )
+						.arg( i->filepath )
+						.arg( i->format.toString() )
+						.arg( i->width )
+						.arg( i->height )
+						.arg( i->mipmaps );
+			} else {
+				temp = QString( "External texture file '%1' not found" ).arg( filename );
+			}
 		}
 	}
 
@@ -422,15 +564,12 @@ QString TexCache::info( const QModelIndex & iSource )
 
 bool TexCache::exportFile( const QModelIndex & iSource, QString & filepath )
 {
-	Tex * tx = embedTextures.value( iSource );
+	Tex &	tx = embedTextures[iSource];
 
-	if ( !tx ) {
-		tx = new Tex();
-		tx->id[0] = 0;
-		tx->id[1] = 0;
-	}
+	if ( !tx.imageInfo )
+		tx.imageInfo = new Tex::ImageInfo;
 
-	return tx->saveAsFile( iSource, filepath );
+	return tx.saveAsFile( iSource, filepath );
 }
 
 bool TexCache::importFile( NifModel * nif, const QModelIndex & iSource, QModelIndex & iData )
@@ -440,8 +579,9 @@ bool TexCache::importFile( NifModel * nif, const QModelIndex & iSource, QModelIn
 		if ( nif->get<quint8>( iSource, "Use External" ) == 1 ) {
 			QString filename = nif->get<QString>( iSource, "File Name" );
 			//qDebug() << "TexCache::importFile: Texture has filename (from NIF) " << filename;
-			Tex * tx = textures.value( filename );
-			return tx->savePixelData( nif, iSource, iData );
+			const Tex::ImageInfo *	i = getTextureInfo( filename );
+			if ( i )
+				return i->savePixelData( nif, iData );
 		}
 	}
 
@@ -453,42 +593,21 @@ bool TexCache::importFile( NifModel * nif, const QModelIndex & iSource, QModelIn
 *  TexCache::Tex
 */
 
-void TexCache::Tex::load( const NifModel * nif )
-{
-	if ( !id[0] )
-		glGenTextures( 1, id );
-
-	width  = height = mipmaps = 0;
-	status = QString();
-
-	if ( target )
-		glBindTexture( target, id[0] );
-
-	try
-	{
-		QByteArray	data;
-		texLoad( nif, filepath, format, target, width, height, mipmaps, data, id );
-	}
-	catch ( QString & e )
-	{
-		status = e;
-	}
-}
-
 bool TexCache::Tex::saveAsFile( const QModelIndex & index, QString & savepath )
 {
-	texLoad( index, format, target, width, height, mipmaps, id );
+	ImageInfo *	i = imageInfo;
+	i->mipmaps = texLoad( index, i->format, target, i->width, i->height, id );
+	mipmaps = std::uint16_t( i->mipmaps );
 
 	if ( savepath.toLower().endsWith( ".tga" ) ) {
-		return texSaveTGA( index, savepath, width, height );
+		return texSaveTGA( index, savepath, i->width, i->height );
 	}
 
-	return texSaveDDS( index, savepath, width, height, mipmaps );
+	return texSaveDDS( index, savepath, i->width, i->height, i->mipmaps );
 }
 
-bool TexCache::Tex::savePixelData( NifModel * nif, const QModelIndex & iSource, QModelIndex & iData )
+bool TexCache::Tex::ImageInfo::savePixelData( NifModel * nif, QModelIndex & iData ) const
 {
-	Q_UNUSED( iSource );
 	// gltexloaders function goes here
 	//qDebug() << "TexCache::Tex:savePixelData: Packing" << iSource << "from file" << filepath << "to" << iData;
 	return texSaveNIF( nif, filepath, iData );
