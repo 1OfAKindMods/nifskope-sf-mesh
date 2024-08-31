@@ -1,5 +1,7 @@
  == CHANGELOG ==
 
+* Fixed vertex selection being slow when the shape has a large number of vertices.
+
 #### NifSkope-2.0.dev9-20240825
 
 * New render setting for the mouse wheel zoom speed in the main window and UV editor.
@@ -11,6 +13,8 @@
 * Fixed invisible Oblivion models with Mesa (and possibly other) OpenGL drivers.
 * Fixed error messages on macOS about unsupported GLSL version in the shaders.
 * Fixed Fallout 3 and Oblivion vertices not being highlighted in vertex selection mode.
+* Various other minor bug fixes.
+* Windows binaries are now also built with Clang.
 
 #### NifSkope-2.0.dev9-20240818
 
