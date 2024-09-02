@@ -71,7 +71,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <QTreeView>
 #include <QStandardItemModel>
 
-#include "libfo76utils/src/ba2file.hpp"
+#include "ba2file.hpp"
 #include "bsamodel.h"
 
 #ifdef WIN32
@@ -138,7 +138,7 @@ static const QHash<QString, QString> migrateTo2_0 = {
 		{ "File/Last Load", "File/Last Load" }, { "File/Last Save", "File/Last Save" },
 		{ "FSEngine/Archives", "FSEngine/Archives" },
 		{ "Render Settings/Anti Aliasing", "Render Settings/Anti Aliasing" },
-		{ "Render Settings/Texturing", "Render Settings/Texturing" }, 
+		{ "Render Settings/Texturing", "Render Settings/Texturing" },
 		{ "Render Settings/Enable Shaders", "Render Settings/Enable Shaders" },
 		{ "Render Settings/Background", "Render Settings/Background" },
 		{ "Render Settings/Foreground", "Render Settings/Foreground" },
@@ -309,10 +309,9 @@ NifSkope::NifSkope()
 	// Create GLView
 	/* ********************** */
 
-	ogl = GLView::create( this );
+	ogl = new GLView( nullptr );
 	ogl->setObjectName( "OGL1" );
 	ogl->setNif( nif );
-	ogl->installEventFilter( this );
 
 	// Create InspectView
 	/* ********************** */
@@ -340,29 +339,12 @@ NifSkope::NifSkope()
 	 */
 
 	// Init Scene and View
-	graphicsScene = new QGraphicsScene( this );
-	graphicsView = new GLGraphicsView( this );
-	graphicsView->setScene( graphicsScene );
-	graphicsView->setRenderHint( QPainter::Antialiasing );
-	graphicsView->setRenderHint( QPainter::SmoothPixmapTransform );
-	graphicsView->setCacheMode( QGraphicsView::CacheNone );
-	graphicsView->setVerticalScrollBarPolicy( Qt::ScrollBarAlwaysOff );
-	graphicsView->setHorizontalScrollBarPolicy( Qt::ScrollBarAlwaysOff );
-	//graphicsView->setOptimizationFlags( QGraphicsView::DontSavePainterState | QGraphicsView::DontAdjustForAntialiasing );
-
-	graphicsView->setViewport( ogl );
-	graphicsView->setViewportUpdateMode( QGraphicsView::FullViewportUpdate );
+	graphicsView = ogl->createWindowContainer( this );
 
 	// Set central widget and viewport
 	setCentralWidget( graphicsView );
 
 	setContextMenuPolicy( Qt::NoContextMenu );
-
-	// Resize timer for eventFilter()
-	isResizing = false;
-	resizeTimer = new QTimer( this );
-	resizeTimer->setSingleShot( true );
-	connect( resizeTimer, &QTimer::timeout, this, &NifSkope::resizeDone );
 
 	// Set Actions
 	initActions();
@@ -991,7 +973,10 @@ void NifSkope::openArchive( const QString & archive )
 
 		// Sort proxy after model/view is populated
 		bsaProxyModel->sort( 0, Qt::AscendingOrder );
+#if 0
+		// this is not needed because archives are already filtered on load
 		bsaProxyModel->setFiletypes( { ".nif", ".bto", ".btr" } );
+#endif
 		bsaProxyModel->resetFilter();
 
 		// Set filename label
@@ -1011,7 +996,9 @@ void NifSkope::openArchive( const QString & archive )
 		connect( filterTimer, &QTimer::timeout, [this]() {
 			auto text = ui->bsaFilter->text();
 
-			bsaProxyModel->setFilterRegExp( QRegExp( text, Qt::CaseInsensitive, QRegExp::Wildcard ) );
+			bsaProxyModel->setFilterRegularExpression(
+				QRegularExpression::fromWildcard(
+					text, Qt::CaseInsensitive, QRegularExpression::UnanchoredWildcardConversion ) );
 			bsaView->expandAll();
 
 			if ( text.isEmpty() ) {
@@ -1120,7 +1107,8 @@ void NifSkope::openFiles( QStringList & files )
 {
 	// Open first file in current window if blank
 	//	or only one file selected.
-	if ( getCurrentFile().isEmpty() || files.count() == 1 ) {
+	if ( ( getCurrentFile().isEmpty() || files.count() == 1 )
+		&& !( isWindowModified() || ( nif && !nif->undoStack->isClean() ) ) ) {
 		QString first = files.takeFirst();
 		if ( !first.isEmpty() )
 			loadFile( first );
@@ -1336,10 +1324,9 @@ void NifSkope::sltLocaleChanged()
 {
 	SetAppLocale( cfg.locale );
 
-	QMessageBox mb( "NifSkope",
+	QMessageBox mb( QMessageBox::Information, "NifSkope",
 	                tr( "NifSkope must be restarted for this setting to take full effect." ),
-	                QMessageBox::Information, QMessageBox::Ok | QMessageBox::Default, 0, 0,
-	                qApp->activeWindow()
+	                QMessageBox::Ok | QMessageBox::Default, qApp->activeWindow()
 	);
 	mb.setIconPixmap( QPixmap( ":/res/nifskope.png" ) );
 	mb.exec();
@@ -1466,7 +1453,7 @@ void NifSkope::migrateSettings() const
 		QStringList keys = settings.allKeys();
 
 		for ( const auto& key : keys ) {
-			if ( settings.value( key ).type() == QVariant::ByteArray ) {
+			if ( settings.value( key ).typeId() == QMetaType::QByteArray ) {
 				qDebug() << "Removing Qt version-specific settings" << key
 					<< "while migrating settings from previous version";
 				settings.remove( key );

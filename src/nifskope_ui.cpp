@@ -54,6 +54,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "qtcompat.h"
 
 #include <QAction>
+#include <QActionGroup>
 #include <QApplication>
 #include <QByteArray>
 #include <QCheckBox>
@@ -363,7 +364,7 @@ void NifSkope::initActions()
 		ogl->setOrientation( GLView::ViewDefault, false );
 	} );
 
-	connect( graphicsView, &GLGraphicsView::customContextMenuRequested, this, &NifSkope::contextMenu );
+	connect( graphicsView, &QWidget::customContextMenuRequested, this, &NifSkope::contextMenu );
 
 	// Update Inspector widget with current index
 	connect( tree, &NifTreeView::sigCurrentIndexChanged, inspect, &InspectView::updateSelection );
@@ -601,7 +602,7 @@ void NifSkope::initToolBars()
 	animGroups->setMinimumWidth( 60 );
 	animGroups->setSizeAdjustPolicy( QComboBox::AdjustToContents );
 	animGroups->setSizePolicy( QSizePolicy::Fixed, QSizePolicy::Minimum );
-	connect( animGroups, static_cast<void (QComboBox::*)(const QString&)>(&QComboBox::activated), ogl, &GLView::setSceneSequence );
+	connect( animGroups, &QComboBox::textActivated, ogl, &GLView::setSceneSequence );
 
 	ui->tAnim->addWidget( animSlider );
 	animGroupsAction = ui->tAnim->addWidget( animGroups );
@@ -655,7 +656,7 @@ void NifSkope::initToolBars()
 	tLOD->setVisible( false );
 
 	connect( lodSlider, &QSlider::valueChanged, ogl->getScene(), &Scene::updateLodLevel );
-	connect( lodSlider, &QSlider::valueChanged, ogl, &GLView::updateGL );
+	connect( lodSlider, &QSlider::valueChanged, ogl, &GLView::update_GL );
 	connect( nif, &NifModel::lodSliderChanged, [tLOD]( bool enabled ) { tLOD->setEnabled( enabled ); tLOD->setVisible( enabled ); } );
 }
 
@@ -795,8 +796,7 @@ void NifSkope::onLoadBegin()
 	// Disconnect the models from the views
 	swapModels();
 
-	ogl->setUpdatesEnabled( false );
-	ogl->setEnabled( false );
+	ogl->setDisabled( true );
 	setEnabled( false );
 	ui->tAnim->setEnabled( false );
 
@@ -820,8 +820,7 @@ void NifSkope::onLoadComplete( bool success, QString & fname )
 	setListMode();
 
 	// Re-enable window
-	ogl->setUpdatesEnabled( true );
-	ogl->setEnabled( true );
+	ogl->setDisabled( false );
 	setEnabled( true ); // IMPORTANT!
 
 	ui->aSave->setDisabled(false);
@@ -1051,7 +1050,7 @@ void NifSkope::setViewFont( const QFont & font )
 	header->setIconSize( QSize( metrics.horizontalAdvance( "000" ), metrics.lineSpacing() ) );
 	kfmtree->setFont( font );
 	kfmtree->setIconSize( QSize( metrics.horizontalAdvance( "000" ), metrics.lineSpacing() ) );
-	ogl->setFont( font );
+//	ogl->setFont( font );
 }
 
 void NifSkope::reloadTheme()
@@ -1246,26 +1245,6 @@ void NifSkope::setTheme( nstheme::WindowTheme t )
 	loadTheme();
 }
 
-void NifSkope::resizeDone()
-{
-	isResizing = false;
-
-	// Unhide GLView, update GLGraphicsView
-	ogl->show();
-	graphicsScene->setSceneRect( graphicsView->rect() );
-	graphicsView->fitInView( graphicsScene->sceneRect() );
-
-	ogl->setUpdatesEnabled( true );
-	ogl->setDisabled( false );
-	ogl->getScene()->animate = true;
-	ogl->update();
-	auto	w = centralWidget();
-	double	p = w->devicePixelRatioF();
-	int	wp = int( p * w->width() + 0.5 );
-	int	hp = int( p * w->height() + 0.5 );
-	ogl->resizeGL( wp, hp );
-}
-
 
 bool NifSkope::eventFilter( QObject * o, QEvent * e )
 {
@@ -1274,74 +1253,68 @@ bool NifSkope::eventFilter( QObject * o, QEvent * e )
 	//	QTimer::singleShot( 0, this, SLOT( overrideViewFont() ) );
 	//}
 
-	// Global mouse press
-	if ( o->isWindowType() && e->type() == QEvent::MouseButtonPress ) {
-		//qDebug() << "Mouse Press";
-	}
-	// Global mouse release
-	if ( o->isWindowType() && e->type() == QEvent::MouseButtonRelease ) {
-		//qDebug() << "Mouse Release";
+	switch ( e->type() ) {
+	case QEvent::MouseButtonPress:
+		// Global mouse press
+		if ( o->isWindowType() ) {
+			//qDebug() << "Mouse Press";
+		}
+		break;
 
-		// Back/Forward button support for cycling through indices
-		auto mouseEvent = static_cast<QMouseEvent *>(e);
-		if ( mouseEvent ) {
-			if ( mouseEvent->button() == Qt::ForwardButton ) {
-				mouseEvent->accept();
-				indexStack->redo();
-			}
+	case QEvent::MouseButtonRelease:
+		// Global mouse release
+		if ( o->isWindowType() ) {
+			//qDebug() << "Mouse Release";
 
-			if ( mouseEvent->button() == Qt::BackButton ) {
-				mouseEvent->accept();
-				indexStack->undo();
+			// Back/Forward button support for cycling through indices
+			auto mouseEvent = static_cast<QMouseEvent *>(e);
+			if ( mouseEvent ) {
+				if ( mouseEvent->button() == Qt::ForwardButton ) {
+					mouseEvent->accept();
+					indexStack->redo();
+				}
+
+				if ( mouseEvent->button() == Qt::BackButton ) {
+					mouseEvent->accept();
+					indexStack->undo();
+				}
 			}
 		}
-	}
+		break;
 
-	// Filter GLGraphicsView
-	auto obj = qobject_cast<GLGraphicsView *>(o);
-	if ( !obj || obj != graphicsView )
-		return QMainWindow::eventFilter( o, e );
-
-	// Turn off animation
-	// Grab framebuffer
-	// Begin resize timer
-	// Block all Resize Events to GLView
-	if ( e->type() == QEvent::Resize ) {
-		// Hide GLView
-		ogl->hide();
-
-		if ( !isResizing  && !resizeTimer->isActive() ) {
-			ogl->getScene()->animate = false;
-			ogl->updateGL();
-
-			if ( viewBuffer.isNull() ) {
-				// Init initial buffer with solid color
-				//	Otherwise becomes random colors on release builds
-				viewBuffer = QImage( 10, 10, QImage::Format_ARGB32 );
-				viewBuffer.fill( ogl->clearColor() );
-			} else {
-				viewBuffer = ogl->grabFrameBuffer();
-			}
-
-			ogl->setUpdatesEnabled( false );
-			ogl->setDisabled( true );
-
-			isResizing = true;
+	case QEvent::ContextMenu:
+		if ( o == ogl ) {
+			ogl->contextMenuEvent( static_cast< QContextMenuEvent * >(e) );
+			return true;
 		}
+		break;
+	case QEvent::DragEnter:
+		if ( o == ogl ) {
+			ogl->dragEnterEvent( static_cast< QDragEnterEvent * >(e) );
+			return true;
+		}
+		break;
+	case QEvent::DragLeave:
+		if ( o == ogl ) {
+			ogl->dragLeaveEvent( static_cast< QDragLeaveEvent * >(e) );
+			return true;
+		}
+		break;
+	case QEvent::DragMove:
+		if ( o == ogl ) {
+			ogl->dragMoveEvent( static_cast< QDragMoveEvent * >(e) );
+			return true;
+		}
+		break;
+	case QEvent::Drop:
+		if ( o == ogl ) {
+			ogl->dropEvent( static_cast< QDropEvent * >(e) );
+			return true;
+		}
+		break;
 
-		resizeTimer->start( 300 );
-
-		return true;
-	}
-
-	// Paint stored framebuffer over GLGraphicsView while resizing
-	if ( !viewBuffer.isNull() && isResizing && e->type() == QEvent::Paint ) {
-		QPainter painter;
-		painter.begin( graphicsView );
-		painter.drawImage( QRect( 0, 0, painter.device()->width(), painter.device()->height() ), viewBuffer );
-		painter.end();
-
-		return true;
+	default:
+		break;
 	}
 
 	return QMainWindow::eventFilter( o, e );

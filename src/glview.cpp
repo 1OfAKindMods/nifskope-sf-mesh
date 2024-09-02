@@ -62,22 +62,14 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <QRadioButton>
 #include <QSettings>
 #include <QSpinBox>
+#include <QSurface>
 #include <QTimer>
 #include <QToolBar>
+#include <QWindow>
 
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
 #include <QOpenGLFramebufferObject>
-#include <QGLFormat>
-
-// TODO: Determine the necessity of this
-// Appears to be used solely for gluErrorString
-// There may be some Qt alternative
-#ifdef __APPLE__
-	#include <OpenGL/glu.h>
-#else
-	#include <GL/glu.h>
-#endif
 
 
 // NOTE: The FPS define is a frame limiter,
@@ -94,33 +86,13 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //! @file glview.cpp GLView implementation
 
 
-GLGraphicsView::GLGraphicsView( QWidget * parent ) : QGraphicsView()
+GLView::GLView( QWindow * p )
+	: QOpenGLWindow( QOpenGLWindow::NoPartialUpdate, p )
 {
-	setContextMenuPolicy( Qt::CustomContextMenu );
-	setFocusPolicy( Qt::ClickFocus );
-	setAcceptDrops( true );
-
-	installEventFilter( parent );
-}
-
-GLGraphicsView::~GLGraphicsView() {}
-
-
-GLView * GLView::create( NifSkope * window )
-{
-	QGLFormat fmt;
-	static QList<QPointer<GLView> > views;
-
-	QGLWidget * share = nullptr;
-	for ( const QPointer<GLView>& v : views ) {
-		if ( v )
-			share = v;
-	}
-
 	QSettings settings;
 	int	aa = settings.value( "Settings/Render/General/Antialiasing", 4 ).toInt();
 #ifdef Q_OS_LINUX
-	// work around issues with MSAA > 4x on Linux
+	// work around issues with MSAA on Linux
 	if ( aa > 2 && !settings.value( "Settings/Render/General/Disable MSAA Limit", false ).toBool() ) {
 		aa = 2;
 		settings.setValue( "Settings/Render/General/Antialiasing", QVariant(aa) );
@@ -128,65 +100,24 @@ GLView * GLView::create( NifSkope * window )
 #endif
 	aa = std::min< int >( std::max< int >( aa, 0 ), 4 );
 
-	// All new windows after the first window will share a format
-	if ( share ) {
-		fmt = share->format();
-	} else {
-		fmt.setSampleBuffers( bool(aa) );
-	}
+	QSurfaceFormat	fmt;
 
-	// OpenGL version
-	fmt.setVersion( 4, 0 );
-	// Ignored if version < 3.2
-	fmt.setProfile( QGLFormat::CompatibilityProfile );
+	// OpenGL version (4.1, compatibility profile)
+	fmt.setRenderableType( QSurfaceFormat::OpenGL );
+	fmt.setMajorVersion( 4 );
+	fmt.setMinorVersion( 1 );
+	fmt.setProfile( QSurfaceFormat::CompatibilityProfile );
+	fmt.setOption( QSurfaceFormat::DeprecatedFunctions, true );
 
 	// V-Sync
 	fmt.setSwapInterval( 1 );
-	fmt.setDoubleBuffer( true );
+	fmt.setSwapBehavior( QSurfaceFormat::DoubleBuffer );
 
+	fmt.setDepthBufferSize( 24 );
+	fmt.setStencilBufferSize( 8 );
 	fmt.setSamples( 1 << aa );
 
-	fmt.setDirectRendering( true );
-	fmt.setRgba( true );
-
-	views.append( QPointer<GLView>( new GLView( fmt, window, share ) ) );
-
-	return views.last();
-}
-
-GLView::GLView( const QGLFormat & format, QWidget * p, const QGLWidget * shareWidget )
-	: QGLWidget( format, p, shareWidget )
-{
-	setFocusPolicy( Qt::ClickFocus );
-	//setAttribute( Qt::WA_PaintOnScreen );
-	//setAttribute( Qt::WA_NoSystemBackground );
-	setAutoFillBackground( false );
-	setAcceptDrops( true );
-	setContextMenuPolicy( Qt::CustomContextMenu );
-
-	// Manually handle the buffer swap
-	// Fixes bug with QGraphicsView and double buffering
-	//	Input becomes sluggish and CPU usage doubles when putting GLView
-	//	inside a QGraphicsView.
-	setAutoBufferSwap( false );
-
-	// Make the context current on this window
-	makeCurrent();
-	if ( !isValid() )
-		return;
-
-	// Create an OpenGL context
-	glContext = context()->contextHandle();
-
-	// Obtain a functions object and resolve all entry points
-	glFuncs = glContext->functions();
-
-	if ( !glFuncs ) {
-		Message::critical( this, tr( "Could not obtain OpenGL functions" ) );
-		exit( 1 );
-	}
-
-	glFuncs->initializeOpenGLFunctions();
+	setFormat( fmt );
 
 	view = ViewDefault;
 	animState = AnimEnabled;
@@ -206,7 +137,7 @@ GLView::GLView( const QGLFormat & format, QWidget * p, const QGLWidget * shareWi
 
 	updateSettings();
 
-	scene = new Scene( textures, glContext, glFuncs );
+	scene = new Scene( textures );
 	connect( textures, &TexCache::sigRefresh, this, static_cast<void (GLView::*)()>(&GLView::update) );
 	connect( scene, &Scene::sceneUpdated, this, static_cast<void (GLView::*)()>(&GLView::update) );
 
@@ -226,10 +157,12 @@ GLView::GLView( const QGLFormat & format, QWidget * p, const QGLWidget * shareWi
 	connect(NifSkope::getOptions(), &SettingsDialog::update3D, [this]() {
 		// Calling update() here in a lambda can crash..
 		//updateSettings();
-		qglClearColor(clearColor());
+		glClearColor( cfg.background.redF(), cfg.background.greenF(), cfg.background.blueF(), cfg.background.alphaF() );
 		//update();
 	});
 	connect(NifSkope::getOptions(), &SettingsDialog::update3D, this, static_cast<void (GLView::*)()>(&GLView::update));
+
+	setMinimumSize( QSize( 50, 50 ) );
 }
 
 GLView::~GLView()
@@ -238,6 +171,20 @@ GLView::~GLView()
 
 	delete textures;
 	delete scene;
+}
+
+QWidget * GLView::createWindowContainer( QWidget * parent )
+{
+	graphicsView = QWidget::createWindowContainer( this, parent );
+	graphicsView->setContextMenuPolicy( Qt::CustomContextMenu );
+	graphicsView->setFocusPolicy( Qt::ClickFocus );
+	graphicsView->setAcceptDrops( true );
+	graphicsView->setMinimumSize( QSize( 50, 50 ) );
+
+	graphicsView->installEventFilter( parent );
+	installEventFilter( graphicsView );
+
+	return graphicsView;
 }
 
 float	GLView::Settings::vertexPointSize = 5.0f;
@@ -387,6 +334,16 @@ void GLView::updateAnimationState( bool checked )
 
 void GLView::initializeGL()
 {
+	glContext = context();
+	// Obtain a functions object and resolve all entry points
+	glFuncs = glContext->functions();
+	if ( !glFuncs ) {
+		QMessageBox::critical( nullptr, "NifSkope error", tr( "Could not obtain OpenGL functions" ) );
+		std::exit( 1 );
+	}
+	glFuncs->initializeOpenGLFunctions();
+	scene->setOpenGLContext( glContext, glFuncs );
+
 	GLenum err;
 
 	if ( scene->hasOption(Scene::DoMultisampling) ) {
@@ -413,7 +370,7 @@ void GLView::initializeGL()
 
 	// Check for errors
 	while ( ( err = glGetError() ) != GL_NO_ERROR )
-		qDebug() << tr( "glview.cpp - GL ERROR (init) : " ) << (const char *)gluErrorString( err );
+		qDebug() << tr( "glview.cpp - GL ERROR (init) : " ) << getGLErrorString( int(err) );
 }
 
 void GLView::updateShaders()
@@ -469,20 +426,13 @@ void GLView::glProjection( int x, int y )
 }
 
 
-#ifdef USE_GL_QPAINTER
-void GLView::paintEvent( QPaintEvent * event )
-{
-	makeCurrent();
-	if ( !isValid() )
-		return;
-
-	QPainter painter;
-	painter.begin( this );
-	painter.setRenderHint( QPainter::TextAntialiasing );
-#else
 void GLView::paintGL()
 {
-#endif
+	if ( isDisabled || !scene->haveRenderer() ) [[unlikely]] {
+		glClearColor( cfg.background.redF(), cfg.background.greenF(), cfg.background.blueF(), cfg.background.alphaF() );
+		glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT );
+		return;
+	}
 
 	// Save GL state
 	glPushAttrib( GL_ALL_ATTRIB_BITS );
@@ -494,9 +444,11 @@ void GLView::paintGL()
 	// Clear Viewport
 	if ( scene->hasVisMode(Scene::VisSilhouette) ) {
 		glClearColor( 1.0f, 1.0f, 1.0f, 1.0f );
+	} else {
+		glClearColor( cfg.background.redF(), cfg.background.greenF(), cfg.background.blueF(), cfg.background.alphaF() );
 	}
 
-	glDisable(GL_FRAMEBUFFER_SRGB);
+	glDisable( GL_FRAMEBUFFER_SRGB );
 	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT );
 
 
@@ -783,23 +735,16 @@ void GLView::paintGL()
 	// Check for errors
 	GLenum err;
 	while ( ( err = glGetError() ) != GL_NO_ERROR )
-		qDebug() << tr( "glview.cpp - GL ERROR (paint): " ) << (const char *)gluErrorString( err );
+		qDebug() << tr( "glview.cpp - GL ERROR (paint): " ) << getGLErrorString( int(err) );
 
 	emit paintUpdate();
-
-	// Manually handle the buffer swap
-	swapBuffers();
-
-#ifdef USE_GL_QPAINTER
-	painter.end();
-#endif
 }
 
 
 void GLView::resizeGL( int width, int height )
 {
-	double	p = 1.0 / devicePixelRatioF();
-	resize( int( p * width + 0.5 ), int( p * height + 0.5 ) );
+	pixelWidth = width;
+	pixelHeight = height;
 
 	makeCurrent();
 	if ( !isValid() )
@@ -808,14 +753,13 @@ void GLView::resizeGL( int width, int height )
 	glViewport( 0, 0, width, height );
 
 	glDisable(GL_FRAMEBUFFER_SRGB);
-	qglClearColor(clearColor());
-	update();
+	glClearColor( cfg.background.redF(), cfg.background.greenF(), cfg.background.blueF(), cfg.background.alphaF() );
 }
 
-void GLView::resizeEvent( [[maybe_unused]] QResizeEvent * e )
+void GLView::resizeEvent( QResizeEvent * e )
 {
-	// This function should never be called.
-	// Moved to NifSkope::eventFilter()
+	double	p = devicePixelRatioF();
+	resizeGL( int( p * e->size().width() + 0.5 ), int( p * e->size().height() + 0.5 ) );
 }
 
 void GLView::setFrontalLight( bool frontal )
@@ -1008,8 +952,8 @@ QModelIndex GLView::indexAt( const QPointF & pos, int cycle )
 	glPushMatrix();
 
 	double	p = devicePixelRatioF();
-	int	wp = int( p * width() + 0.5 );
-	int	hp = int( p * height() + 0.5 );
+	int	wp = pixelWidth;
+	int	hp = pixelHeight;
 	QPointF	posScaled( pos );
 	posScaled *= p;
 	glViewport( 0, 0, wp, hp );
@@ -1399,6 +1343,11 @@ void GLView::loadUserView()
 	settings.endGroup();
 }
 
+inline bool GLView::kbd( int n ) const
+{
+	return bool( kbdState & ( 1ULL << n ) );
+}
+
 void GLView::advanceGears()
 {
 	QTime t  = QTime::currentTime();
@@ -1445,24 +1394,24 @@ void GLView::advanceGears()
 	// keys based on user preferences of what app they would like to
 	// emulate for the control scheme
 	// Rotation
-	if ( kbd[ Qt::Key_Up ] )    rotate( -cfg.rotSpd * dT, 0, 0 );
-	if ( kbd[ Qt::Key_Down ] )  rotate( +cfg.rotSpd * dT, 0, 0 );
-	if ( kbd[ Qt::Key_Left ] )  rotate( 0, 0, -cfg.rotSpd * dT );
-	if ( kbd[ Qt::Key_Right ] ) rotate( 0, 0, +cfg.rotSpd * dT );
+	if ( kbd( Key_RotateUp ) )    rotate( -cfg.rotSpd * dT, 0, 0 );
+	if ( kbd( Key_RotateDown ) )  rotate( +cfg.rotSpd * dT, 0, 0 );
+	if ( kbd( Key_RotateLeft ) )  rotate( 0, 0, -cfg.rotSpd * dT );
+	if ( kbd( Key_RotateRight ) ) rotate( 0, 0, +cfg.rotSpd * dT );
 
 	// Fix movement speed for Starfield scale
 	dT *= scale();
 	// Movement
-	if ( kbd[ Qt::Key_A ] ) move( +cfg.moveSpd * dT, 0, 0 );
-	if ( kbd[ Qt::Key_D ] ) move( -cfg.moveSpd * dT, 0, 0 );
-	if ( kbd[ Qt::Key_W ] ) move( 0, 0, +cfg.moveSpd * dT );
-	if ( kbd[ Qt::Key_S ] ) move( 0, 0, -cfg.moveSpd * dT );
-	if ( kbd[ Qt::Key_Q ] ) move( 0, +cfg.moveSpd * dT, 0 );
-	if ( kbd[ Qt::Key_E ] ) move( 0, -cfg.moveSpd * dT, 0 );
+	if ( kbd( Key_MoveLeft ) ) move( +cfg.moveSpd * dT, 0, 0 );
+	if ( kbd( Key_MoveRight ) ) move( -cfg.moveSpd * dT, 0, 0 );
+	if ( kbd( Key_MoveForward ) ) move( 0, 0, +cfg.moveSpd * dT );
+	if ( kbd( Key_MoveBack ) ) move( 0, 0, -cfg.moveSpd * dT );
+	if ( kbd( Key_MoveDown ) ) move( 0, +cfg.moveSpd * dT, 0 );
+	if ( kbd( Key_MoveUp ) ) move( 0, -cfg.moveSpd * dT, 0 );
 
 	// Focal Length
-	if ( kbd[ Qt::Key_PageUp ] )   setZoom( Zoom * std::sqrt( Settings::zoomOutScale ) );
-	if ( kbd[ Qt::Key_PageDown ] ) setZoom( Zoom * std::sqrt( Settings::zoomInScale ) );
+	if ( kbd( Key_ZoomIn ) )   setZoom( Zoom * std::sqrt( Settings::zoomOutScale ) );
+	if ( kbd( Key_ZoomOut ) )  setZoom( Zoom * std::sqrt( Settings::zoomInScale ) );
 
 	if ( mouseMov[0] != 0 || mouseMov[1] != 0 || mouseMov[2] != 0 ) {
 		move( mouseMov[0], mouseMov[1], mouseMov[2] );
@@ -1475,7 +1424,7 @@ void GLView::advanceGears()
 	}
 
 	// update display without movement
-	if ( kbd[ Qt::Key_M ] ) update();
+	if ( kbd( Key_Update ) ) update();
 }
 
 
@@ -1664,8 +1613,7 @@ void GLView::saveImage()
 						if ( i )
 							scene->visMode = Scene::VisSilhouette;
 					}
-					update();
-					updateGL();
+					paintGL();
 
 					fbo.release();
 
@@ -1683,7 +1631,7 @@ void GLView::saveImage()
 				resizeGL( int( p * w + 0.5 ), int( p * h + 0.5 ) );
 
 			if ( !err.empty() ) {
-				QMessageBox::critical( this, "NifSkope error", QString::fromStdString( err ) );
+				QMessageBox::critical( nullptr, "NifSkope error", QString::fromStdString( err ) );
 				return;
 			}
 
@@ -1745,7 +1693,7 @@ void GLView::saveImage()
 				dlg->accept();
 
 			} catch ( std::exception & e ) {
-				QMessageBox::critical( this, "NifSkope error", tr( "Could not save %1: %2" ).arg( file->file() ).arg( e.what() ) );
+				QMessageBox::critical( nullptr, "NifSkope error", tr( "Could not save %1: %2" ).arg( file->file() ).arg( e.what() ) );
 			}
 		}
 	);
@@ -1761,8 +1709,36 @@ void GLView::saveImage()
  * QWidget Event Handlers
  */
 
+void GLView::contextMenuEvent( QContextMenuEvent * e )
+{
+	if ( ( pressPos - lastPos ).manhattanLength() <= 10 ) {
+		mouseButtonState = 0;
+		emit graphicsView->customContextMenuRequested( e->pos() );
+		e->accept();
+	}
+}
+
 void GLView::dragEnterEvent( QDragEnterEvent * e )
 {
+	// Intercept NIF files
+	if ( e->mimeData()->hasUrls() ) {
+		QList<QUrl> urls = e->mimeData()->urls();
+		for ( auto url : urls ) {
+			if ( url.scheme() == "file" ) {
+				QString fn = url.toLocalFile();
+				QFileInfo finfo( fn );
+				if ( finfo.exists() && NifSkope::fileExtensions().contains( finfo.suffix(), Qt::CaseInsensitive ) ) {
+					draggedNifs << finfo.absoluteFilePath();
+				}
+			}
+		}
+
+		if ( !draggedNifs.isEmpty() ) {
+			e->accept();
+			return;
+		}
+	}
+
 	auto md = e->mimeData();
 	if ( md && md->hasUrls() && md->urls().count() == 1 ) {
 		QUrl url = md->urls().first();
@@ -1783,7 +1759,11 @@ void GLView::dragEnterEvent( QDragEnterEvent * e )
 
 void GLView::dragLeaveEvent( QDragLeaveEvent * e )
 {
-	Q_UNUSED( e );
+	if ( !draggedNifs.isEmpty() ) {
+		draggedNifs.clear();
+		e->ignore();
+		return;
+	}
 
 	if ( iDragTarget.isValid() ) {
 		model->set<QString>( iDragTarget, fnDragTexOrg );
@@ -1794,13 +1774,18 @@ void GLView::dragLeaveEvent( QDragLeaveEvent * e )
 
 void GLView::dragMoveEvent( QDragMoveEvent * e )
 {
+	if ( !draggedNifs.isEmpty() ) {
+		e->accept();
+		return;
+	}
+
 	if ( iDragTarget.isValid() ) {
 		model->set<QString>( iDragTarget, fnDragTexOrg );
 		iDragTarget  = QModelIndex();
 		fnDragTexOrg = QString();
 	}
 
-	QModelIndex iObj = model->getBlockIndex( indexAt( e->posF() ), "NiAVObject" );
+	QModelIndex iObj = model->getBlockIndex( indexAt( e->position() ), "NiAVObject" );
 
 	if ( iObj.isValid() ) {
 		for ( const auto l : model->getChildLinks( model->getBlockNumber( iObj ) ) ) {
@@ -1828,6 +1813,16 @@ void GLView::dragMoveEvent( QDragMoveEvent * e )
 
 void GLView::dropEvent( QDropEvent * e )
 {
+	if ( !draggedNifs.isEmpty() ) {
+		auto ns = qobject_cast<NifSkope *>( graphicsView->parent() );
+		if ( ns )
+			ns->openFiles( draggedNifs );
+
+		draggedNifs.clear();
+		e->accept();
+		return;
+	}
+
 	iDragTarget = QModelIndex();
 	fnDragTex = fnDragTexOrg = QString();
 	e->accept();
@@ -1835,68 +1830,73 @@ void GLView::dropEvent( QDropEvent * e )
 
 void GLView::focusOutEvent( QFocusEvent * )
 {
-	kbd.clear();
+	kbdState = 0;
+	mouseButtonState = 0;
+}
+
+int GLView::convertKeyCode( int n ) const
+{
+	switch ( n ) {
+	case Qt::Key_Up:
+		return Key_RotateUp;
+	case Qt::Key_Down:
+		return Key_RotateDown;
+	case Qt::Key_Left:
+		return Key_RotateLeft;
+	case Qt::Key_Right:
+		return Key_RotateRight;
+	case Qt::Key_PageUp:
+		return Key_ZoomIn;
+	case Qt::Key_PageDown:
+		return Key_ZoomOut;
+	case Qt::Key_A:
+		return Key_MoveLeft;
+	case Qt::Key_D:
+		return Key_MoveRight;
+	case Qt::Key_W:
+		return Key_MoveForward;
+	case Qt::Key_S:
+		return Key_MoveBack;
+#if 0
+	case Qt::Key_F:
+		return Key_FrontView;
+#endif
+	case Qt::Key_Q:
+		return Key_MoveDown;
+	case Qt::Key_E:
+		return Key_MoveUp;
+	case Qt::Key_M:
+		return Key_Update;
+	case Qt::Key_Space:
+		return Key_MoveCam;
+	}
+	return -1;
 }
 
 void GLView::keyPressEvent( QKeyEvent * event )
 {
-	switch ( event->key() ) {
-	case Qt::Key_Up:
-	case Qt::Key_Down:
-	case Qt::Key_Left:
-	case Qt::Key_Right:
-	case Qt::Key_PageUp:
-	case Qt::Key_PageDown:
-	case Qt::Key_A:
-	case Qt::Key_D:
-	case Qt::Key_W:
-	case Qt::Key_S:
-	//case Qt::Key_R:
-	//case Qt::Key_F:
-	case Qt::Key_Q:
-	case Qt::Key_E:
-	case Qt::Key_M:
-	case Qt::Key_Space:
-		kbd[event->key()] = true;
-		break;
-	case Qt::Key_Escape:
+	int	k = convertKeyCode( event->key() );
+	if ( k >= 0 ) {
+		kbdState = kbdState | ( 1ULL << k );
+	} else if ( event->key() == Qt::Key_Escape ) {
 		doCompile = true;
 
 		if ( view == ViewWalk )
 			doCenter = true;
 
 		update();
-		break;
-	default:
+	} else {
 		event->ignore();
-		break;
 	}
 }
 
 void GLView::keyReleaseEvent( QKeyEvent * event )
 {
-	switch ( event->key() ) {
-	case Qt::Key_Up:
-	case Qt::Key_Down:
-	case Qt::Key_Left:
-	case Qt::Key_Right:
-	case Qt::Key_PageUp:
-	case Qt::Key_PageDown:
-	case Qt::Key_A:
-	case Qt::Key_D:
-	case Qt::Key_W:
-	case Qt::Key_S:
-	//case Qt::Key_R:
-	//case Qt::Key_F:
-	case Qt::Key_Q:
-	case Qt::Key_E:
-	case Qt::Key_M:
-	case Qt::Key_Space:
-		kbd[event->key()] = false;
-		break;
-	default:
+	int	k = convertKeyCode( event->key() );
+	if ( k >= 0 ) {
+		kbdState = kbdState & ~( 1ULL << k );
+	} else {
 		event->ignore();
-		break;
 	}
 }
 
@@ -1912,41 +1912,53 @@ void GLView::mouseDoubleClickEvent( QMouseEvent * )
 
 void GLView::mouseMoveEvent( QMouseEvent * event )
 {
-	int dx = event->x() - lastPos.x();
-	int dy = event->y() - lastPos.y();
+	auto	newPos = event->position();
+	float	dx = newPos.x() - lastPos.x();
+	float	dy = newPos.y() - lastPos.y();
+	Qt::MouseButtons	buttonMask = Qt::MouseButtons( mouseButtonState );
 
-	if ( event->buttons() & Qt::LeftButton && !kbd[Qt::Key_Space] ) {
+	if ( ( buttonMask | event->buttons() ) != buttonMask ) [[unlikely]] {
+		// work around button events being lost after activating the context menu
+		buttonMask = buttonMask | event->buttons();
+		mouseButtonState = std::uint32_t( buttonMask );
+		dx = 0.0f;
+		dy = 0.0f;
+	}
+
+	if ( ( buttonMask & Qt::LeftButton ) && !kbd( Key_MoveCam ) ) {
 		mouseRot += Vector3( dy * .5, 0, dx * .5 );
-	} else if ( (event->buttons() & Qt::MiddleButton) || (event->buttons() & Qt::LeftButton && kbd[Qt::Key_Space]) ) {
+	} else if ( ( buttonMask & Qt::MiddleButton ) || ( ( buttonMask & Qt::LeftButton ) && kbd( Key_MoveCam ) ) ) {
 		float d = axis / (qMax( width(), height() ) + 1);
 		mouseMov += Vector3( dx * d, -dy * d, 0 );
-	} else if ( event->buttons() & Qt::RightButton ) {
+	} else if ( buttonMask & Qt::RightButton ) {
 		setDistance( Dist - (dx + dy) * (axis / (qMax( width(), height() ) + 1)) );
 	}
 
-	lastPos = event->pos();
+	lastPos = newPos;
 }
 
 void GLView::mousePressEvent( QMouseEvent * event )
 {
+	mouseButtonState |= std::uint32_t( event->button() );
 	if ( event->button() == Qt::ForwardButton || event->button() == Qt::BackButton ) {
 		event->ignore();
 		return;
 	}
 
-	lastPos = event->pos();
+	lastPos = event->position();
 
-	if ( (pressPos - event->pos()).manhattanLength() <= 3 )
+	if ( (pressPos - lastPos).manhattanLength() <= 3 )
 		cycleSelect++;
 	else
 		cycleSelect = 0;
 
-	pressPos = event->pos();
+	pressPos = lastPos;
 }
 
 void GLView::mouseReleaseEvent( QMouseEvent * event )
 {
-	if ( !(model && (pressPos - event->pos()).manhattanLength() <= 3) )
+	mouseButtonState &= ~( std::uint32_t( event->button() ) );
+	if ( !(model && (pressPos - event->position()).manhattanLength() <= 3) )
 		return;
 
 	if ( event->button() == Qt::ForwardButton || event->button() == Qt::BackButton || event->button() == Qt::MiddleButton ) {
@@ -1960,7 +1972,7 @@ void GLView::mouseReleaseEvent( QMouseEvent * event )
 	bool	isColorPicker = bool( event->modifiers() & Qt::AltModifier );
 #endif
 	if ( !isColorPicker ) {
-		QModelIndex idx = indexAt( event->localPos(), cycleSelect );
+		QModelIndex idx = indexAt( event->position(), cycleSelect );
 		scene->currentBlock = model->getBlockIndex( idx );
 		scene->currentIndex = idx.sibling( idx.row(), 0 );
 
@@ -1985,16 +1997,15 @@ void GLView::mouseReleaseEvent( QMouseEvent * event )
 		fbo.bind();
 
 		update();
-		updateGL();
 
 		fbo.release();
 
 		QImage * img = new QImage( fbo.toImage() );
 
-		auto what = img->pixel( ( event->localPos() * devicePixelRatioF() ).toPoint() );
+		QColor what = QColor( img->pixel( ( event->position() * devicePixelRatioF() ).toPoint() ) );
 
-		qglClearColor( QColor( what ) );
-		// qDebug() << QColor( what );
+		glClearColor( what.redF(), what.greenF(), what.blueF(), what.alphaF() );
+		// qDebug() << what;
 
 		delete img;
 	}
@@ -2014,180 +2025,25 @@ void GLView::wheelEvent( QWheelEvent * event )
 	}
 }
 
-
-void GLGraphicsView::setupViewport( QWidget * viewport )
+const char * GLView::getGLErrorString( int err )
 {
-	GLView * glWidget = qobject_cast<GLView *>(viewport);
-	if ( glWidget ) {
-		//glWidget->installEventFilter( this );
+	switch ( err ) {
+	case GL_NO_ERROR:
+		return "No Error";
+	case GL_INVALID_ENUM:
+		return "GL_INVALID_ENUM";
+	case GL_INVALID_VALUE:
+		return "GL_INVALID_VALUE";
+	case GL_INVALID_OPERATION:
+		return "GL_INVALID_OPERATION";
+	case GL_INVALID_FRAMEBUFFER_OPERATION:
+		return "GL_INVALID_FRAMEBUFFER_OPERATION";
+	case GL_OUT_OF_MEMORY:
+		return "GL_OUT_OF_MEMORY";
+	case GL_STACK_UNDERFLOW:
+		return "GL_STACK_UNDERFLOW";
+	case GL_STACK_OVERFLOW:
+		return "GL_STACK_OVERFLOW";
 	}
-
-	QGraphicsView::setupViewport( viewport );
-}
-
-bool GLGraphicsView::eventFilter( QObject * o, QEvent * e )
-{
-	//GLView * glWidget = qobject_cast<GLView *>(o);
-	//if ( glWidget ) {
-	//
-	//}
-
-	return QGraphicsView::eventFilter( o, e );
-}
-
-//void GLGraphicsView::paintEvent( QPaintEvent * e )
-//{
-//	GLView * glWidget = qobject_cast<GLView *>(viewport());
-//	if ( glWidget ) {
-//	//	glWidget->paintEvent( e );
-//	}
-//
-//	QGraphicsView::paintEvent( e );
-//}
-
-void GLGraphicsView::drawForeground( QPainter * painter, const QRectF & rect )
-{
-	QGraphicsView::drawForeground( painter, rect );
-}
-
-void GLGraphicsView::drawBackground( QPainter * painter, const QRectF & rect )
-{
-	Q_UNUSED( painter ); Q_UNUSED( rect );
-
-	GLView * glWidget = qobject_cast<GLView *>(viewport());
-	if ( glWidget ) {
-		glWidget->updateGL();
-	}
-
-	//QGraphicsView::drawBackground( painter, rect );
-}
-
-void GLGraphicsView::dragEnterEvent( QDragEnterEvent * e )
-{
-	// Intercept NIF files
-	if ( e->mimeData()->hasUrls() ) {
-		QList<QUrl> urls = e->mimeData()->urls();
-		for ( auto url : urls ) {
-			if ( url.scheme() == "file" ) {
-				QString fn = url.toLocalFile();
-				QFileInfo finfo( fn );
-				if ( finfo.exists() && NifSkope::fileExtensions().contains( finfo.suffix(), Qt::CaseInsensitive ) ) {
-					draggedNifs << finfo.absoluteFilePath();
-				}
-			}
-		}
-
-		if ( !draggedNifs.isEmpty() ) {
-			e->accept();
-			return;
-		}
-	}
-
-	// Pass event on to viewport for any texture drag/drops
-	GLView * glWidget = qobject_cast<GLView *>(viewport());
-	if ( glWidget ) {
-		glWidget->dragEnterEvent( e );
-	}
-}
-void GLGraphicsView::dragLeaveEvent( QDragLeaveEvent * e )
-{
-	if ( !draggedNifs.isEmpty() ) {
-		draggedNifs.clear();
-		e->ignore();
-		return;
-	}
-
-	// Pass event on to viewport for any texture drag/drops
-	GLView * glWidget = qobject_cast<GLView *>(viewport());
-	if ( glWidget ) {
-		glWidget->dragLeaveEvent( e );
-	}
-}
-void GLGraphicsView::dragMoveEvent( QDragMoveEvent * e )
-{
-	if ( !draggedNifs.isEmpty() ) {
-		e->accept();
-		return;
-	}
-
-	// Pass event on to viewport for any texture drag/drops
-	GLView * glWidget = qobject_cast<GLView *>(viewport());
-	if ( glWidget ) {
-		glWidget->dragMoveEvent( e );
-	}
-}
-void GLGraphicsView::dropEvent( QDropEvent * e )
-{
-	if ( !draggedNifs.isEmpty() ) {
-		auto ns = qobject_cast<NifSkope *>(parentWidget());
-		if ( ns ) {
-			ns->openFiles( draggedNifs );
-		}
-
-		draggedNifs.clear();
-		e->accept();
-		return;
-	}
-
-	// Pass event on to viewport for any texture drag/drops
-	GLView * glWidget = qobject_cast<GLView *>(viewport());
-	if ( glWidget ) {
-		glWidget->dropEvent( e );
-	}
-}
-void GLGraphicsView::focusOutEvent( QFocusEvent * e )
-{
-	GLView * glWidget = qobject_cast<GLView *>(viewport());
-	if ( glWidget ) {
-		glWidget->focusOutEvent( e );
-	}
-}
-void GLGraphicsView::keyPressEvent( QKeyEvent * e )
-{
-	GLView * glWidget = qobject_cast<GLView *>(viewport());
-	if ( glWidget ) {
-		glWidget->keyPressEvent( e );
-	}
-}
-void GLGraphicsView::keyReleaseEvent( QKeyEvent * e )
-{
-	GLView * glWidget = qobject_cast<GLView *>(viewport());
-	if ( glWidget ) {
-		glWidget->keyReleaseEvent( e );
-	}
-}
-void GLGraphicsView::mouseDoubleClickEvent( QMouseEvent * e )
-{
-	GLView * glWidget = qobject_cast<GLView *>(viewport());
-	if ( glWidget ) {
-		glWidget->mouseDoubleClickEvent( e );
-	}
-}
-void GLGraphicsView::mouseMoveEvent( QMouseEvent * e )
-{
-	GLView * glWidget = qobject_cast<GLView *>(viewport());
-	if ( glWidget ) {
-		glWidget->mouseMoveEvent( e );
-	}
-}
-void GLGraphicsView::mousePressEvent( QMouseEvent * e )
-{
-	GLView * glWidget = qobject_cast<GLView *>(viewport());
-	if ( glWidget ) {
-		glWidget->mousePressEvent( e );
-	}
-}
-void GLGraphicsView::mouseReleaseEvent( QMouseEvent * e )
-{
-	GLView * glWidget = qobject_cast<GLView *>(viewport());
-	if ( glWidget ) {
-		glWidget->mouseReleaseEvent( e );
-	}
-}
-void GLGraphicsView::wheelEvent( QWheelEvent * e )
-{
-	GLView * glWidget = qobject_cast<GLView *>(viewport());
-	if ( glWidget ) {
-		glWidget->wheelEvent( e );
-	}
+	return "Unknown OpenGL Error";
 }

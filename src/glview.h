@@ -36,43 +36,35 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "gl/glscene.h"
 #include "model/nifmodel.h"
 
-#include <QGLWidget> // Inherited
+#include <QOpenGLWindow> // Inherited
 #include <QGraphicsView>
 #include <QDateTime>
 #include <QPersistentModelIndex>
 
-#include <math.h>
 
-
-//! @file glview.h GLView, GLGraphicsView
+//! @file glview.h GLView
 
 class NifSkope;
-class GLGraphicsView;
 
-class QGLFormat;
 class QOpenGLContext;
 class QOpenGLFunctions;
 class QTimer;
 
 
 //! The main [Viewport](@ref viewport_details) class
-class GLView final : public QGLWidget
+class GLView final : public QOpenGLWindow
 {
 	Q_OBJECT
 
 	friend class NifSkope;
-	friend class GLGraphicsView;
-
-private:
-	GLView( const QGLFormat & format, QWidget * parent, const QGLWidget * shareWidget = 0 );
-	~GLView();
 
 public:
-	//! Static instance
-	static GLView * create( NifSkope * );
+	GLView( QWindow * parent );
+	~GLView();
+	QWidget * createWindowContainer( QWidget * parent );
 
-	QOpenGLContext * glContext;
-	QOpenGLFunctions * glFuncs;
+	QOpenGLContext * glContext = nullptr;
+	QOpenGLFunctions * glFuncs = nullptr;
 
 	float	brightnessScale = 1.0f;		// overall brightness
 	float	ambient = 1.0f;				// environment map / ambient light level
@@ -95,7 +87,7 @@ public:
 
 	AnimationState animState;
 
-	enum ViewState
+	enum ViewState : unsigned char
 	{
 		ViewDefault,
 		ViewTop,
@@ -108,14 +100,14 @@ public:
 		ViewUser
 	};
 
-	enum DebugMode
+	enum DebugMode : unsigned char
 	{
 		DbgNone = 0,
 		DbgColorPicker = 1,
 		DbgBounds = 2
 	};
 
-	enum UpAxis
+	enum UpAxis : unsigned char
 	{
 		XAxis = 0,
 		YAxis = 1,
@@ -157,20 +149,6 @@ public:
 
 	QModelIndex indexAt( const QPointF & p, int cycle = 0 );
 
-	// UI
-
-	QSize minimumSizeHint() const override final { return { 50, 50 }; }
-	QSize sizeHint() const override final { return { 400, 400 }; }
-
-	//! Returns the actual dimensions in pixels (FIXME: it may be inaccurate due to rounding)
-	QSize getSizeInPixels() const
-	{
-		double	p = devicePixelRatioF();
-		int	w = int( p * width() + 0.5 );
-		int	h = int( p * height() + 0.5 );
-		return QSize( w, h );
-	}
-
 public slots:
 	void setCurrentIndex( const QModelIndex & );
 	void setSceneTime( float );
@@ -190,6 +168,7 @@ public slots:
 	void setVisMode( Scene::VisMode, bool checked = true );
 	void updateSettings();
 	void selectPBRCubeMap();
+	void update_GL( [[maybe_unused]] int tmp ) { update(); }
 
 signals:
 	void clicked( const QModelIndex & );
@@ -208,20 +187,17 @@ protected:
 	//! Sets up the OpenGL viewport, projection, etc.
 	void resizeGL( int width, int height ) override final;
 	void resizeEvent( QResizeEvent * event ) override final;
-#ifdef USE_GL_QPAINTER
-	void paintEvent( QPaintEvent * ) override final;
-#else
 	//! Renders the OpenGL scene.
 	void paintGL() override final;
-#endif
 	void glProjection( int x = -1, int y = -1 );
 
 	// QWidget Event Handlers
 
-	void dragEnterEvent( QDragEnterEvent * ) override final;
-	void dragLeaveEvent( QDragLeaveEvent * ) override final;
-	void dragMoveEvent( QDragMoveEvent * ) override final;
-	void dropEvent( QDropEvent * ) override final;
+	void contextMenuEvent( QContextMenuEvent * );
+	void dragEnterEvent( QDragEnterEvent * );
+	void dragLeaveEvent( QDragLeaveEvent * );
+	void dragMoveEvent( QDragMoveEvent * );
+	void dropEvent( QDropEvent * );
 	void focusOutEvent( QFocusEvent * ) override final;
 	void keyPressEvent( QKeyEvent * ) override final;
 	void keyReleaseEvent( QKeyEvent * ) override final;
@@ -258,21 +234,55 @@ private:
 
 	GLdouble aspect;
 
-	QHash<int, bool> kbd;
-	QPoint lastPos;
-	QPoint pressPos;
+	std::uint64_t kbdState = 0;
+	QPointF lastPos;
+	QPointF pressPos;
 	Vector3 mouseMov;
 	Vector3 mouseRot;
 	int cycleSelect;
+	std::uint32_t mouseButtonState = 0;
 
 	QPersistentModelIndex iDragTarget;
 	QString fnDragTex, fnDragTexOrg;
 
+	bool isDisabled = true;
 	bool doCompile;
 	bool doCenter;
 
 	QTimer * lightVisTimer;
 	int lightVisTimeout;
+
+	int pixelWidth = 640;
+	int pixelHeight = 480;
+
+	QWidget * graphicsView = nullptr;
+
+	enum Key : unsigned char
+	{
+		Key_CenterView = 1,
+		Key_FrontView = 2,
+		Key_LeftView = 3,
+		Key_MoveBack = 4,
+		Key_MoveCam = 5,
+		Key_MoveDown = 6,
+		Key_MoveForward = 7,
+		Key_MoveLeft = 8,
+		Key_MoveRight = 9,
+		Key_MoveUp = 10,
+		Key_Perspective = 11,
+		Key_RotateDown = 12,
+		Key_RotateLeft = 13,
+		Key_RotateRight = 14,
+		Key_RotateUp = 15,
+		Key_ToggleGrid = 16,
+		Key_TopView = 17,
+		Key_Update = 18,
+		Key_ZoomIn = 19,
+		Key_ZoomOut = 20
+	};
+
+	int convertKeyCode( int n ) const;
+	inline bool kbd( int n ) const;
 
 public:
 	struct Settings
@@ -299,6 +309,19 @@ public:
 		static float	zoomOutScale;
 	} cfg;
 
+	//! Returns the actual dimensions in pixels
+	QSize getSizeInPixels() const
+	{
+		return QSize( pixelWidth, pixelHeight );
+	}
+
+	inline void setDisabled( bool n )
+	{
+		isDisabled = n;
+	}
+
+	static const char * getGLErrorString( int err );
+
 private slots:
 	void advanceGears();
 
@@ -306,45 +329,11 @@ private slots:
 	void modelChanged();
 	void modelLinked();
 	void modelDestroyed();
+
+private:
+	QStringList draggedNifs;
 };
 
 Q_DECLARE_OPERATORS_FOR_FLAGS( GLView::AnimationState )
-
-
-class GLGraphicsView : public QGraphicsView
-{
-	Q_OBJECT
-
-public:
-	GLGraphicsView( QWidget * parent );
-	~GLGraphicsView();
-
-protected slots:
-	void setupViewport( QWidget * viewport ) override;
-
-protected:
-	bool eventFilter( QObject * o, QEvent * e ) override final;
-	void dragEnterEvent( QDragEnterEvent * ) override final;
-	void dragLeaveEvent( QDragLeaveEvent * ) override final;
-	void dragMoveEvent( QDragMoveEvent * ) override final;
-	void dropEvent( QDropEvent * ) override final;
-	void focusOutEvent( QFocusEvent * ) override final;
-	void keyPressEvent( QKeyEvent * ) override final;
-	void keyReleaseEvent( QKeyEvent * ) override final;
-	void mouseDoubleClickEvent( QMouseEvent * ) override final;
-	void mouseMoveEvent( QMouseEvent * ) override final;
-	void mousePressEvent( QMouseEvent * ) override final;
-	void mouseReleaseEvent( QMouseEvent * ) override final;
-	void wheelEvent( QWheelEvent * ) override final;
-
-	//void paintEvent( QPaintEvent * ) override final;
-	void drawBackground( QPainter * painter, const QRectF & rect ) override final;
-	void drawForeground( QPainter * painter, const QRectF & rect ) override final;
-
-private:
-
-	QStringList draggedNifs;
-
-};
 
 #endif

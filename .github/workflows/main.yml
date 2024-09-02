@@ -27,12 +27,12 @@ jobs:
         msystem: UCRT64
         update: true
         cache: true
-        install: 'base-devel mingw-w64-ucrt-x86_64-gcc msys/p7zip mingw-w64-ucrt-x86_64-qt5-base mingw-w64-ucrt-x86_64-qt5-3d mingw-w64-ucrt-x86_64-qt5-imageformats mingw-w64-ucrt-x86_64-qt5-tools'
+        install: 'base-devel mingw-w64-ucrt-x86_64-gcc msys/p7zip mingw-w64-ucrt-x86_64-qt6-base mingw-w64-ucrt-x86_64-qt6-3d mingw-w64-ucrt-x86_64-qt6-5compat mingw-w64-ucrt-x86_64-qt6-imageformats mingw-w64-ucrt-x86_64-qt6-tools'
 
     - name: 'Build with qmake'
       shell: msys2 {0}
       run: |
-        qmake noavx2=1 NifSkope.pro
+        qmake6 noavx2=1 NifSkope.pro
         make -j 8
         mv -f release/NifSkope.exe release/NifSkope_noavx2.exe
 
@@ -45,7 +45,7 @@ jobs:
 
 
   build_linux:
-    runs-on: ubuntu-latest
+    runs-on: 'ubuntu-24.04'
     name: Build Linux
 
     steps:
@@ -56,14 +56,13 @@ jobs:
         submodules: recursive
 
     - name: 'Install required packages'
-      uses: awalsh128/cache-apt-pkgs-action@latest
-      with:
-          packages: libsdl2-dev qtbase5-dev qt5-qmake qt5-image-formats-plugins
-          version: 1.0
+      run: |
+        sudo apt-get update
+        sudo apt-get -y install libsdl2-dev qt6-base-dev qt6-base-private-dev qt6-base-dev-tools qt6-5compat-dev qt6-3d-dev qmake6 qt6-image-formats-plugins 7zip
 
     - name: 'Build with qmake'
       run: |
-        x86_64-linux-gnu-qmake noavx2=1 NifSkope.pro
+        qmake6 noavx2=1 NifSkope.pro
         make -j 8
         mv -f release/NifSkope release/NifSkope_noavx2
 
@@ -87,13 +86,16 @@ jobs:
 
     - name: 'Install required packages'
       uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.7.2'
+        modules: 'qt5compat'
 
     - name: 'Install clang'
       run: brew install llvm
 
     - name: 'Build with qmake'
       run: |
-        qmake noavx2=1 NifSkope.pro
+        qmake6 QMAKE_APPLE_DEVICE_ARCHS="x86_64" noavx2=1 NifSkope.pro
         make -j 8
 
     - name: 'Create DMG image'
@@ -127,12 +129,12 @@ jobs:
         msystem: CLANG64
         update: true
         cache: true
-        install: 'base-devel mingw-w64-clang-x86_64-gcc msys/p7zip mingw-w64-clang-x86_64-qt5-base mingw-w64-clang-x86_64-qt5-3d mingw-w64-clang-x86_64-qt5-imageformats mingw-w64-clang-x86_64-qt5-tools'
+        install: 'base-devel mingw-w64-clang-x86_64-gcc msys/p7zip mingw-w64-clang-x86_64-qt6-base mingw-w64-clang-x86_64-qt6-3d mingw-w64-clang-x86_64-qt6-5compat mingw-w64-clang-x86_64-qt6-imageformats mingw-w64-clang-x86_64-qt6-tools'
 
     - name: 'Build with qmake'
       shell: msys2 {0}
       run: |
-        qmake NifSkope.pro
+        qmake6 NifSkope.pro
         make -j 8
 
     - name: 'Upload Artifacts'

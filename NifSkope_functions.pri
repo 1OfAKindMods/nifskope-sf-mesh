@@ -160,7 +160,7 @@ defineReplace(QtHex) {
 
 # Format string for Qt DLL
 
-DLLSTRING = $$quote(Qt5%1)
+DLLSTRING = $$quote(Qt6%1)
 CONFIG(debug, debug|release) {
 	DLLEXT = $$quote(d.dll)
 } else {
@@ -181,6 +181,7 @@ defineReplace(QtBins) {
         #   Note: As of Qt 5.5, changed `lib*` to `lib*-*` in order to avoid unneeded libs.
 		list += \
             # $$[QT_INSTALL_BINS]/SDL2.dll \
+            $$[QT_INSTALL_BINS]/libb2-1.dll \
             $$[QT_INSTALL_BINS]/libbrotlicommon.dll \
             $$[QT_INSTALL_BINS]/libbrotlidec.dll \
             $$[QT_INSTALL_BINS]/libbz2-1.dll \

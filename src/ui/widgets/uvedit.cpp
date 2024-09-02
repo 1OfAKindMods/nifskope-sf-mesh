@@ -62,15 +62,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <QSettings>
 #include <QMessageBox>
 #include <QFileDialog>
-
-// TODO: Determine the necessity of this
-// Appears to be used solely for gluErrorString
-// There may be some Qt alternative
-#ifdef __APPLE__
-	#include <OpenGL/glu.h>
-#else
-	#include <GL/glu.h>
-#endif
+#include <QSurfaceFormat>
 
 #define BASESIZE 1024.0
 #define GRIDSIZE 16.0
@@ -118,8 +110,14 @@ QStringList UVWidget::texnames = {
 
 
 UVWidget::UVWidget( QWidget * parent )
-	: QGLWidget( QGLFormat( QGL::SampleBuffers ), parent, 0, Qt::Window ), undoStack( new QUndoStack( this ) )
+	: QOpenGLWidget( parent, Qt::Window ), undoStack( new QUndoStack( this ) )
 {
+	{
+		QSurfaceFormat	fmt = format();
+		fmt.setSamples( 4 );
+		setFormat( fmt );
+	}
+
 	setWindowTitle( tr( "UV Editor" ) );
 	setFocusPolicy( Qt::StrongFocus );
 
@@ -183,13 +181,13 @@ UVWidget::UVWidget( QWidget * parent )
 	aTextureBlend = new QAction( tr( "Texture Alpha Blending" ), this );
 	aTextureBlend->setCheckable( true );
 	aTextureBlend->setChecked( true );
-	connect( aTextureBlend, &QAction::toggled, this, &UVWidget::updateGL );
+	connect( aTextureBlend, &QAction::toggled, this, &UVWidget::update_Blend );
 	addAction( aTextureBlend );
 
 	updateSettings();
 
 	connect( NifSkope::getOptions(), &SettingsDialog::saveSettings, this, &UVWidget::updateSettings );
-	connect( NifSkope::getOptions(), &SettingsDialog::update3D, this, &UVWidget::updateGL );
+	connect( NifSkope::getOptions(), &SettingsDialog::update3D, this, &UVWidget::update_3D );
 }
 
 UVWidget::~UVWidget()
@@ -214,7 +212,7 @@ void UVWidget::initializeGL()
 {
 	glMatrixMode( GL_MODELVIEW );
 
-	initializeTextureUnits( context()->contextHandle() );
+	initializeTextureUnits( context() );
 
 	glShadeModel( GL_SMOOTH );
 	//glShadeModel( GL_LINE_SMOOTH );
@@ -228,7 +226,7 @@ void UVWidget::initializeGL()
 	glEnable( GL_MULTISAMPLE );
 	glDisable( GL_LIGHTING );
 
-	qglClearColor( cfg.background );
+	glClearColor( cfg.background.redF(), cfg.background.greenF(), cfg.background.blueF(), cfg.background.alphaF() );
 
 	if ( currentTexSlot < texfiles.size() && !texfiles[currentTexSlot].isEmpty() )
 		bindTexture( texfiles[currentTexSlot] );
@@ -247,15 +245,16 @@ void UVWidget::initializeGL()
 	GLenum err;
 
 	while ( ( err = glGetError() ) != GL_NO_ERROR ) {
-		qDebug() << "GL ERROR (init) : " << (const char *)gluErrorString( err );
+		qDebug() << "GL ERROR (init) : " << GLView::getGLErrorString( int(err) );
 	}
 }
 
 void UVWidget::resizeGL( int width, int height )
 {
-	pixelWidth = width;
-	pixelHeight = height;
-	updateViewRect( width, height );
+	double	p = devicePixelRatioF();
+	pixelWidth = int( p * width + 0.5 );
+	pixelHeight = int( p * height + 0.5 );
+	updateViewRect( pixelWidth, pixelHeight );
 }
 
 void UVWidget::paintGL()
@@ -272,7 +271,7 @@ void UVWidget::paintGL()
 	glPushMatrix();
 	glLoadIdentity();
 
-	qglClearColor( cfg.background );
+	glClearColor( cfg.background.redF(), cfg.background.greenF(), cfg.background.blueF(), cfg.background.alphaF() );
 	glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 
 	glDisable( GL_DEPTH_TEST );
@@ -618,7 +617,7 @@ int UVWidget::heightForWidth( int width ) const
 void UVWidget::mousePressEvent( QMouseEvent * e )
 {
 	double	p = devicePixelRatioF();
-	QPoint	pixelPos( ( e->localPos() * p ).toPoint() );
+	QPoint	pixelPos( ( e->position() * p ).toPoint() );
 	QPoint	dPos( pixelPos - mousePos );
 	mousePos = pixelPos;
 
@@ -660,13 +659,13 @@ void UVWidget::mousePressEvent( QMouseEvent * e )
 		}
 	}
 
-	updateGL();
+	update();
 }
 
 void UVWidget::mouseMoveEvent( QMouseEvent * e )
 {
 	double	p = devicePixelRatioF();
-	QPoint	pixelPos( ( e->localPos() * p ).toPoint() );
+	QPoint	pixelPos( ( e->position() * p ).toPoint() );
 	QPoint	dPos( pixelPos - mousePos );
 	mousePos = pixelPos;
 
@@ -720,13 +719,13 @@ void UVWidget::mouseMoveEvent( QMouseEvent * e )
 		return;
 	}
 
-	updateGL();
+	update();
 }
 
 void UVWidget::mouseReleaseEvent( QMouseEvent * e )
 {
 	double	p = devicePixelRatioF();
-	QPoint	pixelPos( ( e->localPos() * p ).toPoint() );
+	QPoint	pixelPos( ( e->position() * p ).toPoint() );
 
 	switch ( e->button() ) {
 	case Qt::LeftButton:
@@ -753,7 +752,7 @@ void UVWidget::mouseReleaseEvent( QMouseEvent * e )
 		setCursor( QCursor( Qt::CrossCursor ) );
 	}
 
-	updateGL();
+	update();
 }
 
 void UVWidget::wheelEvent( QWheelEvent * e )
@@ -769,7 +768,7 @@ void UVWidget::wheelEvent( QWheelEvent * e )
 		break;
 	}
 
-	updateGL();
+	update();
 }
 
 void UVWidget::keyPressEvent( QKeyEvent * e )
@@ -1195,13 +1194,17 @@ void UVWidget::updateNif()
 		disconnect( nif, &NifModel::dataChanged, this, &UVWidget::nifDataChanged );
 		nif->setState( BaseModel::Processing );
 
-		if ( sfMeshIndex.isValid() ) {
+		if ( sfMeshIndex.isValid() && nif->isArray( iTexCoords ) ) {
 			int	numVerts = int( texcoords.size() );
+			NifItem *	texcoordsItem = nif->getItem( iTexCoords );
+			if ( !texcoordsItem )
+				numVerts = 0;
+			else
+				numVerts = std::min< int >( numVerts, texcoordsItem->childCount() );
 			for ( int i = 0; i < numVerts; i++ ) {
-				auto	j = QModelIndex_child( iTexCoords, i );
-				if ( !j.isValid() )
-					break;
-				nif->set<HalfVector2>( j, texcoords.at( i ) );
+				NifItem *	j = texcoordsItem->child( i );
+				if ( j )
+					nif->set<HalfVector2>( j, texcoords.at( i ) );
 			}
 		} else if ( nif->blockInherits( iShapeData, "NiTriBasedGeomData" ) ) {
 			nif->setArray<Vector2>( iTexCoords, texcoords );
@@ -1272,13 +1275,13 @@ public:
 	{
 		oldSelection = uvw->selection;
 		uvw->selection = newSelection;
-		uvw->updateGL();
+		uvw->update();
 	}
 
 	void undo() override final
 	{
 		uvw->selection = oldSelection;
-		uvw->updateGL();
+		uvw->update();
 	}
 
 protected:
@@ -1390,7 +1393,7 @@ public:
 			uvw->texcoords[tc] += move;
 		}
 		uvw->updateNif();
-		uvw->updateGL();
+		uvw->update();
 	}
 
 	void undo() override final
@@ -1399,7 +1402,7 @@ public:
 			uvw->texcoords[tc] -= move;
 		}
 		uvw->updateNif();
-		uvw->updateGL();
+		uvw->update();
 	}
 
 protected:
@@ -1462,7 +1465,7 @@ public:
 		}
 
 		uvw->updateNif();
-		uvw->updateGL();
+		uvw->update();
 	}
 
 	void undo() override final
@@ -1487,7 +1490,7 @@ public:
 		}
 
 		uvw->updateNif();
-		uvw->updateGL();
+		uvw->update();
 	}
 
 protected:
@@ -1653,7 +1656,7 @@ public:
 		}
 
 		uvw->updateNif();
-		uvw->updateGL();
+		uvw->update();
 	}
 
 	void undo() override final
@@ -1682,7 +1685,7 @@ public:
 		}
 
 		uvw->updateNif();
-		uvw->updateGL();
+		uvw->update();
 	}
 
 protected:
@@ -1846,7 +1849,7 @@ void UVWidget::selectTexSlot()
 					iTexCoords = QModelIndex_child( nif->getIndex( iShapeData, "UV Sets" ), currentCoordSet );
 					texsource  = iTexSource;
 					setTexCoords();
-					updateGL();
+					update();
 					return;
 				}
 			}
