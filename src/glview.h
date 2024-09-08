@@ -150,6 +150,7 @@ public:
 	QModelIndex indexAt( const QPointF & p, int cycle = 0 );
 
 public slots:
+	void update();
 	void setCurrentIndex( const QModelIndex & );
 	void setSceneTime( float );
 	void setSceneSequence( const QString & );
@@ -248,6 +249,7 @@ private:
 	bool isDisabled = true;
 	bool doCompile;
 	bool doCenter;
+	unsigned char updatePending = 0;
 
 	QTimer * lightVisTimer;
 	int lightVisTimeout;

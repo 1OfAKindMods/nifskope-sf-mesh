@@ -141,7 +141,7 @@ void SettingsPane::readPane( QWidget * w, QSettings & settings )
 			tEmit->setInterval( 500 );
 			tEmit->setSingleShot( true );
 			connect( tEmit, &QTimer::timeout, this, &SettingsPane::modifyPane );
-			connect( edt, &QLineEdit::textEdited, [this, tEmit]() {
+			connect( edt, &QLineEdit::textEdited, [tEmit]() {
 				if ( tEmit->isActive() ) {
 					tEmit->stop();
 				}
@@ -781,9 +781,10 @@ void SettingsResources::on_btnFolderUp_clicked()
 void SettingsResources::on_btnFolderAutoDetect_clicked()
 {
 	QStringList folders_list = folders->stringList();
-	for ( const auto& f : GameManager::find_folders(currentFolderItem()) ) {
-		if ( folders_list.contains(f, Qt::CaseInsensitive) )
-			continue;
+	for ( const auto& f : GameManager::find_paths(currentFolderItem()) ) {
+		qsizetype	i;
+		while ( ( i = folders_list.indexOf( f, Qt::CaseInsensitive ) ) >= 0 )
+			folders_list.removeAt( i );
 		folders_list << f;
 	}
 

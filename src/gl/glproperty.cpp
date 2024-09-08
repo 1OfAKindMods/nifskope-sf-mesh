@@ -1007,10 +1007,14 @@ void BSShaderLightingProperty::loadSFMaterial()
 	try {
 		CE2MaterialDB *	materials = nif->getCE2Materials();
 		if ( materials ) {
-			if ( !sfMaterialPath.empty() ) {
+			if ( sfMaterialPath.empty() ) [[unlikely]] {
+				// for editor markers
+				if ( typeid( *this ) == typeid( BSEffectShaderProperty ) )
+					sf_material = materials->loadMaterial( "materials/effects/xtests/effectmaterialchecker.mat" );
+			} else {
 				sf_material = materials->loadMaterial( sfMaterialPath );
-				sf_material_valid = bool( sf_material );
 			}
+			sf_material_valid = bool( sf_material );
 			if ( !sf_material_valid )
 				sf_material = materials->loadMaterial( "materials/test/generic/test_generic_white.mat" );
 			sfMaterialDB_ID = nif->getCE2MaterialDB_ID();
@@ -1019,6 +1023,15 @@ void BSShaderLightingProperty::loadSFMaterial()
 		sf_material = nullptr;
 		sf_material_valid = false;
 		sfMaterialDB_ID = nif->getCE2MaterialDB_ID();
+		if ( std::string_view(e.what()).starts_with( "BA2File: unexpected change to size of loose file" ) ) {
+			Game::GameManager::GameResources &	r = nif->getGameResources();
+			if ( r.ba2File && r.ba2File->findFile( sfMaterialPath ) )
+				r.close_archives();
+			if ( r.parent && r.parent->ba2File && r.parent->ba2File->findFile( sfMaterialPath ) )
+				r.parent->close_archives();
+			loadSFMaterial();
+			return;
+		}
 		QMessageBox::critical( nullptr, "NifSkope error", QString("Error loading material '%1': %2" ).arg( sfMaterialPath.c_str() ).arg( e.what() ) );
 	}
 	const_cast< NifModel * >(nif)->loadSFMaterial( iBlock, ( sf_material_valid ? sf_material : nullptr ) );

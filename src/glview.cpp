@@ -428,6 +428,8 @@ void GLView::glProjection( int x, int y )
 
 void GLView::paintGL()
 {
+	updatePending = 0;
+
 	if ( isDisabled || !scene->haveRenderer() ) [[unlikely]] {
 		glClearColor( cfg.background.redF(), cfg.background.greenF(), cfg.background.blueF(), cfg.background.alphaF() );
 		glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT );
@@ -444,8 +446,6 @@ void GLView::paintGL()
 	// Clear Viewport
 	if ( scene->hasVisMode(Scene::VisSilhouette) ) {
 		glClearColor( 1.0f, 1.0f, 1.0f, 1.0f );
-	} else {
-		glClearColor( cfg.background.redF(), cfg.background.greenF(), cfg.background.blueF(), cfg.background.alphaF() );
 	}
 
 	glDisable( GL_FRAMEBUFFER_SRGB );
@@ -678,7 +678,7 @@ void GLView::paintGL()
 
 	if ( scene->hasOption(Scene::ShowAxes) ) {
 		// Resize viewport to small corner of screen
-		int axesSize = int( devicePixelRatioF() * 0.1 * std::min< int >( width(), 1250 ) + 0.5 );
+		int axesSize = int( std::min< double >( 0.1 * pixelWidth, 125.0 * devicePixelRatioF() ) + 0.5 );
 		glViewport( 0, 0, axesSize, axesSize );
 
 		// Reset matrices
@@ -719,8 +719,7 @@ void GLView::paintGL()
 		glPopMatrix();
 
 		// Restore viewport size
-		QSize	sizeInPixels( getSizeInPixels() );
-		glViewport( 0, 0, sizeInPixels.width(), sizeInPixels.height() );
+		glViewport( 0, 0, pixelWidth, pixelHeight );
 		// Restore matrices
 		glProjection();
 	}
@@ -738,6 +737,18 @@ void GLView::paintGL()
 		qDebug() << tr( "glview.cpp - GL ERROR (paint): " ) << getGLErrorString( int(err) );
 
 	emit paintUpdate();
+}
+
+void GLView::update()
+{
+	if ( !isExposed() ) {
+		QOpenGLWindow::update();
+	} else {
+		// work around 5 ms delay to update()
+		if ( !updatePending )
+			QCoreApplication::postEvent( this, new QEvent( QEvent::UpdateRequest ), Qt::HighEventPriority );
+		updatePending = 10;
+	}
 }
 
 
@@ -1032,11 +1043,11 @@ void GLView::setCenter()
 		// Center on selected node
 		BoundSphere bs = node->bounds();
 
-		this->setPosition( -bs.center );
-
 		if ( bs.radius > 0 ) {
-			setDistance( bs.radius * 1.2 );
+			Dist = bs.radius * 1.2;
 		}
+
+		this->setPosition( -bs.center );
 	} else {
 		// Center on entire mesh
 		BoundSphere bs = scene->bounds();
@@ -1044,10 +1055,10 @@ void GLView::setCenter()
 		if ( bs.radius < scale() )
 			bs.radius = 1024.0 * scale();
 
-		setDistance( bs.radius * 1.2 );
-		setZoom( 1.0 );
+		Dist = bs.radius * 1.2;
+		Zoom = 1.0;
 
-		setPosition( -bs.center );
+		Pos = -bs.center;
 
 		setOrientation( view );
 	}
@@ -1350,6 +1361,8 @@ inline bool GLView::kbd( int n ) const
 
 void GLView::advanceGears()
 {
+	updatePending -= (unsigned char) bool( updatePending );
+
 	QTime t  = QTime::currentTime();
 	float dT = lastTime.msecsTo( t ) / 1000.0;
 	dT = (dT < 0) ? 0 : ((dT > 1.0) ? 1.0 : dT);
@@ -1992,11 +2005,10 @@ void GLView::mouseReleaseEvent( QMouseEvent * event )
 		fboFmt.setMipmap( false );
 		fboFmt.setAttachment( QOpenGLFramebufferObject::Attachment::Depth );
 
-		QSize	sizeInPixels( getSizeInPixels() );
-		QOpenGLFramebufferObject fbo( sizeInPixels.width(), sizeInPixels.height(), fboFmt );
+		QOpenGLFramebufferObject fbo( pixelWidth, pixelHeight, fboFmt );
 		fbo.bind();
 
-		update();
+		paintGL();
 
 		fbo.release();
 

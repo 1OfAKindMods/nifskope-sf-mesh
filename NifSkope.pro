@@ -223,7 +223,6 @@ HEADERS += \
 	src/version.h \
 	lib/dds.h \
 	lib/dxgiformat.h \
-	lib/half.h \
 	lib/json.hpp \
 	lib/meshlet.h \
 	lib/meshoptimizer/meshoptimizer.h \
@@ -328,7 +327,6 @@ SOURCES += \
 	src/nifskope_ui.cpp \
 	src/spellbook.cpp \
 	src/version.cpp \
-	lib/half.cpp \
 	lib/meshlet.cpp \
 	lib/meshoptimizer/clusterizer.cpp \
 	lib/meshoptimizer/simplifier.cpp \
@@ -507,6 +505,7 @@ win32 {
 
 macx {
 	LIBS += -framework CoreFoundation
+	QMAKE_CXXFLAGS *= -DGL_SILENCE_DEPRECATION=1
 }
 
 
