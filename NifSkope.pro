@@ -279,6 +279,8 @@ SOURCES += \
 	src/spells/light.cpp \
 	src/spells/materialedit.cpp \
 	src/spells/mesh.cpp \
+	src/spells/meshreplace.cpp \
+	src/spells/meshreplacebulk.cpp \
 	src/spells/meshfilecopy.cpp \
 	src/spells/misc.cpp \
 	src/spells/moppcode.cpp \
@@ -553,6 +555,9 @@ build_pass|!debug_and_release {
 
 	# Copy Readmes and rename to TXT
 	copyFiles( $$READMES,,,, md:txt )
+
+	# Copy SF Mesh map file
+	copyFiles( sf_mesh_map_1_11_33.v2.txt,, true )
 
 	win32:!static {
 		# Copy DLLs to build dir

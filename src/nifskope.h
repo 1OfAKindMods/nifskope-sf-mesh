@@ -113,6 +113,8 @@ public:
 	//! Restore NifSkope UI settings.
 	void restoreUi();
 
+	void publicSave() { save(); }
+
 	//! Returns path of currently open file
 	QString getCurrentFile() const;
 
