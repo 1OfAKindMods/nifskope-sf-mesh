@@ -1,15 +1,25 @@
  == CHANGELOG ==
 
-#### NifSkope-2.0.dev9-20240908
+* Implemented the 'Transform/Scale Vertices' spell for Skyrim: Special Edition, Fallout 4, Fallout 76 and Starfield. Note that skin partitions are currently not supported, and normals, tangent space and bounds should be updated after using this spell.
+* CharacterCombine blend mode is now correctly implemented on Starfield materials as multiplicative blending, and defaults to multiplying by 1.0 if the overlay textures are missing.
+* Fixed the Options/Theme menu, the list of available styles is now automatically detected, instead of using fixed Windows specific options like "Windows XP" that may no longer be supported by new versions of Qt (see https://github.com/hexabits/nifskope/issues/52).
+* Fixed error on opening Fallout 76 models with NiPSysRotDampeningCtlr blocks.
+* Fixed the UV editor and some of the spells not updating the view after making changes.
+* Fixed crash on closing the last main window while the UV editor is open.
+
+#### NifSkope-2.0.dev9-20240912
 
 * The Qt version used by NifSkope has been upgraded from 5.15 to 6.7. This is an experimental change and may still have issues. Note that Windows versions older than 10 are not supported by Qt 6.
 * The maximum number of Starfield material layers that can be rendered has been increased from 4 to 6.
 * Auto-detecting game paths in the resource settings now adds archives and the Textures and Materials folders, instead of the game data path. Loose Starfield geometries are not added automatically, since loading Data/geometries can take a long time with all base game .mesh files extracted.
 * Fixes to rendering Starfield materials, and to loading and exporting .mat files.
+* Fixed error on opening NIF files with a BS version of 173 that contain BSWeakReferenceNode blocks.
+* Fixed the Transform/Edit spell not updating the view on changes to the translation or rotation, and for Starfield, the translation step size has also been reduced from 1.0 to 0.02.
 * Fixed "unexpected change to size of loose file" error message on changes to loose Starfield .mat files, resources are now automatically closed and reloaded if such change is detected.
 * Fixed error color on missing Starfield albedo textures. An empty texture path now defaults to black, but invalid textures are highlighted with the error color (if enabled).
 * Fixed vertex selection being slow when the shape has a large number of vertices.
 * Fixed error in the UV editor with Starfield meshes using external geometry data.
+* Fixed invisible Morrowind meshes when skinning is enabled.
 * Linux binary packages are now built on Ubuntu 24.04 instead of 22.04.
 
 #### NifSkope-2.0.dev9-20240825

@@ -195,7 +195,7 @@ QModelIndex spApplyTransformation::cast( NifModel * nif, const QModelIndex & ind
 
 		nif->setState( BaseModel::Processing );
 		for ( int i = 0; i < nif->rowCount( iVertData ); i++ ) {
-			auto iVert = QModelIndex_child( iVertData, i );
+			auto iVert = nif->getIndex( iVertData, i );
 
 			auto vertex = t * nif->get<Vector3>( iVert, "Vertex" );
 			if ( !nif->set<HalfVector3>( iVert, "Vertex", vertex ) )
@@ -394,9 +394,12 @@ public:
 
 	bool isApplicable( const NifModel * nif, const QModelIndex & index ) override final
 	{
-		return nif->blockInherits( index, "NiGeometry" );
+		return ( nif->blockInherits( index, "NiGeometry" )
+				|| ( nif->blockInherits( index, "BSTriShape" ) && nif->getIndex( index, "Vertex Data" ).isValid() )
+				|| ( nif->blockInherits( index, "BSGeometry" ) && ( nif->get<quint32>(index, "Flags") & 0x0200 ) ) );
 	}
 
+	static void cast_Starfield( NifModel * nif, const QModelIndex & index, FloatVector4 scaleVector, bool scaleNormals );
 	QModelIndex cast( NifModel * nif, const QModelIndex & index ) override final
 	{
 		QDialog dlg;
@@ -430,7 +433,52 @@ public:
 		if ( dlg.exec() != QDialog::Accepted )
 			return QModelIndex();
 
-		settings.setValue( key, chkNormals->isChecked() );
+		FloatVector4	scaleVector( float( scale[0]->value() ), float( scale[1]->value() ), float( scale[2]->value() ), 0.0f );
+		bool	scaleNormals = chkNormals->isChecked();
+
+		settings.setValue( key, scaleNormals );
+
+		if ( nif->blockInherits( index, "BSGeometry" ) ) {
+			cast_Starfield( nif, index, scaleVector, scaleNormals );
+			return index;
+		}
+
+		if ( nif->blockInherits( index, "BSTriShape" ) ) {
+			auto	idx = nif->getIndex( index, "Vertex Data" );
+			if ( !idx.isValid() )
+				return index;
+
+			nif->setState( BaseModel::Processing );
+			int	numVerts = nif->rowCount( idx );
+			for ( int i = 0; i < numVerts; i++ ) {
+				auto	v = nif->getIndex( idx, i );
+				if ( !v.isValid() )
+					continue;
+				auto	iVertex = nif->getItem( v, "Vertex" );
+				if ( iVertex ) {
+					Vector3	xyz = nif->get<Vector3>( iVertex );
+					xyz.fromFloatVector4( FloatVector4( xyz ) * scaleVector );
+					if ( iVertex->hasValueType( NifValue::tHalfVector3 ) )
+						nif->set<HalfVector3>( iVertex, xyz );
+					else
+						nif->set<Vector3>( iVertex, xyz );
+				}
+				if ( scaleNormals ) {
+					auto	iNormal = nif->getIndex( v, "Normal" );
+					if ( iNormal.isValid() ) {
+						// FIXME: simple multiplication of the normals does not give correct results,
+						// normals and tangent space still need to be recalculated after using this spell
+						FloatVector4	n( nif->get<Vector3>( iNormal ) );
+						n *= scaleVector;
+						n.normalize();
+						nif->set<ByteVector3>( iNormal, Vector3( n ) );
+					}
+				}
+			}
+			nif->restoreState();
+
+			return index;
+		}
 
 		QModelIndex iData = nif->getBlockIndex( nif->getLink( nif->getBlockIndex( index ), "Data" ), "NiGeometryData" );
 
@@ -439,22 +487,18 @@ public:
 
 		while ( it.hasNext() ) {
 			Vector3 & v = it.next();
-
-			for ( int a = 0; a < 3; a++ )
-				v[a] *= scale[a]->value();
+			v.fromFloatVector4( FloatVector4( v ) * scaleVector );
 		}
 
 		nif->setArray<Vector3>( iData, "Vertices", vertices );
 
-		if ( chkNormals->isChecked() ) {
+		if ( scaleNormals ) {
 			QVector<Vector3> norms = nif->getArray<Vector3>( iData, "Normals" );
 			QMutableVectorIterator<Vector3> it( norms );
 
 			while ( it.hasNext() ) {
 				Vector3 & v = it.next();
-
-				for ( int a = 0; a < 3; a++ )
-					v[a] *= scale[a]->value();
+				v.fromFloatVector4( ( FloatVector4( v ) * scaleVector ).normalize() );
 			}
 
 			nif->setArray<Vector3>( iData, "Normals", norms );
@@ -464,6 +508,68 @@ public:
 	}
 };
 
-REGISTER_SPELL( spScaleVertices )
+void spScaleVertices::cast_Starfield(
+	NifModel * nif, const QModelIndex & index, FloatVector4 scaleVector, bool scaleNormals )
+{
+	if ( !index.isValid() ) {
+		return;
+	} else {
+		NifItem *	i = nif->getItem( index );
+		if ( !i )
+			return;
+		if ( !i->hasStrType( "BSMeshData" ) ) {
+			if ( i->hasStrType( "BSMesh" ) ) {
+				cast_Starfield( nif, nif->getIndex( i, "Mesh Data" ), scaleVector, scaleNormals );
+			} else if ( i->hasStrType( "BSMeshArray" ) ) {
+				if ( nif->get<bool>( i, "Has Mesh" ) )
+					cast_Starfield( nif, nif->getIndex( i, "Mesh" ), scaleVector, scaleNormals );
+			} else if ( nif->blockInherits( index, "BSGeometry" ) && ( nif->get<quint32>( i, "Flags" ) & 0x0200 ) ) {
+				auto	iMeshes = nif->getIndex( i, "Meshes" );
+				if ( iMeshes.isValid() && nif->isArray( iMeshes ) ) {
+					for ( int n = 0; n <= 3; n++ )
+						cast_Starfield( nif, nif->getIndex( iMeshes, n ), scaleVector, scaleNormals );
+				}
+			}
+			return;
+		}
+	}
 
+	auto	iVertices = nif->getIndex( index, "Vertices" );
+	if ( iVertices.isValid() && nif->isArray( iVertices ) && nif->rowCount( iVertices ) > 0 ) {
+		QVector< ShortVector3 >	verts = nif->getArray<ShortVector3>( iVertices );
+		float	scale = nif->get<float>( index, "Scale" );
+		FloatVector4	xyzMax( 0.0f );
+		for ( Vector3 & v : verts ) {
+			FloatVector4	xyz( v );
+			xyz *= scaleVector * scale;
+			xyzMax.maxValues( xyz );
+			xyzMax.maxValues( xyz * -1.0f );
+			v.fromFloatVector4( xyz );
+		}
+		xyzMax[0] = std::max( xyzMax[0], std::max( xyzMax[1], xyzMax[2] ) );
+		// normalize vertex coordinates
+		scale = 1.0f / 64.0f;
+		while ( xyzMax[0] > scale && scale < 16777216.0f )
+			scale = scale + scale;
+		float	invScale = 1.0f / scale;
+		nif->set<float>( index, "Scale", scale );
+		for ( Vector3 & v : verts )
+			v.fromFloatVector4( FloatVector4( v ) * invScale );
+		nif->setArray<ShortVector3>( iVertices, verts );
+	}
+
+	if ( !scaleNormals )
+		return;
+	auto	iNormals = nif->getIndex( index, "Normals" );
+	if ( iNormals.isValid() && nif->isArray( iNormals ) && nif->rowCount( iNormals ) > 0 ) {
+		QVector< UDecVector4 >	normals = nif->getArray<UDecVector4>( iNormals );
+		for ( UDecVector4 & v : normals ) {
+			FloatVector4	n( v );
+			( n * scaleVector ).normalize().convertToVector3( &(v[0]) );
+		}
+		nif->setArray<UDecVector4>( iNormals, normals );
+	}
+}
+
+REGISTER_SPELL( spScaleVertices )
 

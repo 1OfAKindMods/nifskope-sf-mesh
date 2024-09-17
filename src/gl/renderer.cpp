@@ -73,12 +73,79 @@ static const QString cube_fo4 = "textures/shared/cubemaps/mipblur_defaultoutside
 static const QString grayCube = "#FF555555c";
 static const QString pbr_lut_sf = "#sfpbr.dds";
 
-static const std::uint32_t defaultSFTextureSet[21] = {
-	0xFFFF00FFU, 0xFFFF8080U, 0xFFFFFFFFU, 0xFFC0C0C0U, 0xFF000000U, 0xFFFFFFFFU,
-	0xFF000000U, 0xFF000000U, 0xFF000000U, 0xFF808080U, 0xFF000000U, 0xFF808080U,
-	0xFF000000U, 0xFF000000U, 0xFF808080U, 0xFF808080U, 0xFF808080U, 0xFF000000U,
-	0xFF000000U, 0xFFFFFFFFU, 0xFF808080U
+const char * const Renderer::Program::uniforms[NUM_UNIFORM_TYPES] = {
+	"BaseMap",	// SAMP_BASE
+	"NormalMap",	// SAMP_NORMAL
+	"SpecularMap",	// SAMP_SPECULAR
+	"ReflMap",	// SAMP_REFLECTIVITY
+	"LightingMap",	// SAMP_LIGHTING
+	"CubeMap",	// SAMP_CUBE
+	"CubeMap2",	// SAMP_CUBE_2
+	"EnvironmentMap",	// SAMP_ENV_MASK
+	"GlowMap",	// SAMP_GLOW
+	"HeightMap",	// SAMP_HEIGHT
+	"GreyscaleMap",	// SAMP_GRAYSCALE
+	"DetailMask",	// SAMP_DETAIL
+	"TintMask",	// SAMP_TINT
+	"LightMask",	// SAMP_LIGHT
+	"BacklightMap",	// SAMP_BACKLIGHT
+	"InnerMap",	// SAMP_INNER
+	"alpha",	// ALPHA
+	"doubleSided",	// DOUBLE_SIDE
+	"envReflection",	// ENV_REFLECTION
+	"falloffDepth",	// FALL_DEPTH
+	"falloffParams",	// FALL_PARAMS
+	"greyscaleAlpha",	// G2P_ALPHA
+	"greyscaleColor",	// G2P_COLOR
+	"paletteScale",	// G2P_SCALE
+	"glowColor",	// GLOW_COLOR
+	"glowMult",	// GLOW_MULT
+	"hasEmit",	// HAS_EMIT
+	"hasBacklight",	// HAS_MAP_BACK
+	"hasSourceTexture",	// HAS_MAP_BASE
+	"hasCubeMap",	// HAS_MAP_CUBE
+	"hasDetailMask",	// HAS_MAP_DETAIL
+	"hasGreyscaleMap",	// HAS_MAP_G2P
+	"hasGlowMap",	// HAS_MAP_GLOW
+	"hasHeightMap",	// HAS_MAP_HEIGHT
+	"hasNormalMap",	// HAS_MAP_NORMAL
+	"hasSpecularMap",	// HAS_MAP_SPEC
+	"hasTintMask",	// HAS_MAP_TINT
+	"hasEnvMask",	// HAS_MASK_ENV
+	"hasRGBFalloff",	// HAS_RGBFALL
+	"hasRimlight",	// HAS_RIM
+	"hasSoftlight",	// HAS_SOFT
+	"hasTintColor",	// HAS_TINT_COLOR
+	"hasWeaponBlood",	// HAS_WEAP_BLOOD
+	"innerScale",	// INNER_SCALE
+	"innerThickness",	// INNER_THICK
+	"lightingEffect1",	// LIGHT_EFF1
+	"lightingEffect2",	// LIGHT_EFF2
+	"lightingInfluence",	// LIGHT_INF
+	"viewMatrix",	// MAT_VIEW
+	"worldMatrix",	// MAT_WORLD
+	"outerReflection",	// OUTER_REFL
+	"outerRefraction",	// OUTER_REFR
+	"backlightPower",	// POW_BACK
+	"fresnelPower",	// POW_FRESNEL
+	"rimPower",	// POW_RIM
+	"hasSpecular",	// HAS_SPECULAR
+	"specColor",	// SPEC_COLOR
+	"specGlossiness",	// SPEC_GLOSS
+	"specStrength",	// SPEC_SCALE
+	"subsurfaceRolloff",	// SS_ROLLOFF
+	"tintColor",	// TINT_COLOR
+	"useFalloff",	// USE_FALLOFF
+	"uvOffset",	// UV_OFFSET
+	"uvScale",	// UV_SCALE
+	"isSkinned",	// SKINNED
+	"isGPUSkinned",	// GPU_SKINNED
+	"boneTransforms",	// GPU_BONES
+	"isWireframe",	// WIREFRAME
+	"solidColor",	// SOLID_COLOR
+	"fLumEmittance"	// LUM_EMIT
 };
+
 
 bool Renderer::initialize()
 {
@@ -420,7 +487,7 @@ bool Renderer::Program::load( const QString & filepath, Renderer * renderer )
 void Renderer::Program::setUniformLocations()
 {
 	for ( int i = 0; i < NUM_UNIFORM_TYPES; i++ )
-		uniformLocations[i] = f->glGetUniformLocation( id, uniforms[i].c_str() );
+		uniformLocations[i] = f->glGetUniformLocation( id, uniforms[i] );
 }
 
 Renderer::Renderer( QOpenGLContext * c, QOpenGLFunctions * f )
@@ -578,7 +645,9 @@ void Renderer::stopProgram()
 		fn->glUseProgram( 0 );
 	}
 
-	resetTextureUnits();
+	int	numTex = fixedFuncTexUnits;
+	fixedFuncTexUnits = 0;
+	resetTextureUnits( numTex );
 }
 
 void Renderer::Program::uni1f( UniformType var, float x )
@@ -943,7 +1012,7 @@ bool Renderer::setupProgramCE2( const NifModel * nif, Program * prog, Shape * me
 	prog->uni1i( HAS_MAP_CUBE, hasCubeMap );
 
 	// texture unit 2 is reserved for the environment BRDF LUT texture
-	if ( !activateTextureUnit( texunit, true ) )
+	if ( !activateTextureUnit( texunit ) )
 		return false;
 	if ( !lsp->bind( pbr_lut_sf, true, TexClampMode::CLAMP_S_CLAMP_T ) )
 		return false;
@@ -953,8 +1022,8 @@ bool Renderer::setupProgramCE2( const NifModel * nif, Program * prog, Shape * me
 	defaultUVStream.scaleAndOffset = FloatVector4( 1.0f, 1.0f, 0.0f, 0.0f );
 	defaultUVStream.textureAddressMode = 0;	// "Wrap"
 	defaultUVStream.channel = 1;	// "One"
+	static const std::string_view	emptyTexturePath = "";
 
-	prog->uni1b( "isWireframe", false );
 	prog->uni1i( HAS_SPECULAR, int(scene->hasOption(Scene::DoSpecular)) );
 	prog->uni1i( "lm.shaderModel", mat->shaderModel );
 	prog->uni4f_l( prog->uniLocation("parallaxOcclusionSettings"), FloatVector4( 8.0f, float(cfg.sfParallaxMaxSteps), cfg.sfParallaxScale, cfg.sfParallaxOffset ) );
@@ -1030,8 +1099,8 @@ bool Renderer::setupProgramCE2( const NifModel * nif, Program * prog, Shape * me
 		prog->uni1b( "lm.decalSettings.isPlanet", sp->isPlanet );
 		prog->uni1b( "lm.decalSettings.isProjected", sp->isProjected );
 		prog->uni1b( "lm.decalSettings.useParallaxOcclusionMapping", sp->useParallaxMapping );
-		int	texUniform = 0;
-		lsp->getSFTexture( texunit, texUniform, nullptr, sp->surfaceHeightMap, 0, 0, nullptr );
+		FloatVector4	replUniform( 0.0f );
+		int	texUniform = lsp->getSFTexture( texunit, replUniform, *(sp->surfaceHeightMap), 0, 0, nullptr );
 		prog->uni1i( "lm.decalSettings.surfaceHeightMap", texUniform );
 		prog->uni1f( "lm.decalSettings.parallaxOcclusionScale", sp->parallaxOcclusionScale );
 		prog->uni1b( "lm.decalSettings.parallaxOcclusionShadows", sp->parallaxOcclusionShadows );
@@ -1053,8 +1122,11 @@ bool Renderer::setupProgramCE2( const NifModel * nif, Program * prog, Shape * me
 		if ( mat->flags & CE2Material::Flag_LayeredEdgeFalloff )
 			layeredEdgeFalloffFlags = mat->layeredEdgeFalloff->activeLayersMask & 0x07;
 		prog->uni1b( "lm.effectSettings.vertexColorBlend", bool(sp->flags & CE2Material::EffectFlag_VertexColorBlend) );
+		// these settings appear to be unused, effects are always alpha tested with a threshold of 1/128
+#if 0
 		prog->uni1b( "lm.effectSettings.isAlphaTested", bool(sp->flags & CE2Material::EffectFlag_IsAlphaTested) );
 		prog->uni1f( "lm.effectSettings.alphaTestThreshold", sp->alphaThreshold );
+#endif
 		prog->uni1b( "lm.effectSettings.noHalfResOptimization", bool(sp->flags & CE2Material::EffectFlag_NoHalfResOpt) );
 		prog->uni1b( "lm.effectSettings.softEffect", bool(sp->flags & CE2Material::EffectFlag_SoftEffect) );
 		prog->uni1f( "lm.effectSettings.softFalloffDepth", sp->softFalloffDepth );
@@ -1138,9 +1210,8 @@ bool Renderer::setupProgramCE2( const NifModel * nif, Program * prog, Shape * me
 		const CE2Material::UVStream *	uvStream = sp->uvStream;
 		if ( !uvStream )
 			uvStream = &defaultUVStream;
-		int	texUniform = 0;
 		FloatVector4	replUniform( 0.0f );
-		lsp->getSFTexture( texunit, texUniform, &replUniform, sp->texturePath, sp->textureReplacement, int(sp->textureReplacementEnabled), uvStream );
+		int	texUniform = lsp->getSFTexture( texunit, replUniform, *(sp->texturePath), sp->textureReplacement, int(sp->textureReplacementEnabled), uvStream );
 		prog->uni1i( "lm.detailBlender.maskTexture", texUniform );
 		if ( texUniform < 0 )
 			prog->uni4f_l( prog->uniLocation("lm.detailBlender.maskTextureReplacement"), replUniform );
@@ -1162,53 +1233,56 @@ bool Renderer::setupProgramCE2( const NifModel * nif, Program * prog, Shape * me
 			texUniforms[j] = 0;
 			replUniforms[j] = FloatVector4( 0.0f );
 		}
+		std::uint32_t	textureSlotMap = 0;
+		std::uint32_t	textureReplModes = 0x0055955E;	// 2, 3, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1
+		const CE2Material::Blender *	blender = nullptr;
+		if ( i ) {
+			blender = mat->blenders[i - 1];
+			if ( !blender ) [[unlikely]] {
+				prog->uni1i_l( prog->uniLocation("lm.blenders[%d].maskTexture", i - 1), -1 );
+				prog->uni4f_l( prog->uniLocation("lm.blenders[%d].maskTextureReplacement", i - 1), FloatVector4( 0.0f ) );
+				prog->uni1i_l( prog->uniLocation("lm.blenders[%d].blendMode", i - 1), 3 );
+				prog->uni1i_l( prog->uniLocation("lm.blenders[%d].colorChannel", i - 1), 0 );
+			} else if ( blender->blendMode == 4 ) {
+				// CharacterCombine: remap color, roughness and metalness to overlay texture slots (0,3,4 -> 14,15,16)
+				textureSlotMap = 0x000CC00E;
+			}
+		}
 		if ( layer->material && layer->material->textureSet ) {
 			const CE2Material::TextureSet *	textureSet = layer->material->textureSet;
 			prog->uni1f_l( prog->uniLocation("lm.layers[%d].material.textureSet.floatParam", i), textureSet->floatParam );
 			for ( int j = 0; j < 9 && j < CE2Material::TextureSet::maxTexturePaths; j++ ) {
-				int	k = j;
-				if ( i ) {
-					// Character2Layer, Character3Layer or Character4Layer
-					if ( mat->shaderModel >= 34 && mat->shaderModel <= 36 ) {
-						// remap color, roughness and metalness to overlay texture slots
-						if ( j == 0 )
-							k = 14;
-						else if ( j == 3 || j == 4 )
-							k = j + 12;
-					}
-				}
-				const std::string_view *	texturePath = nullptr;
-				if ( textureSet->texturePathMask & (1 << k) )
-					texturePath = textureSet->texturePaths[k];
+				int	k = j + int( textureSlotMap & 15U );
+				const std::string_view *	texturePath = textureSet->texturePaths[k];
 				std::uint32_t	textureReplacement = textureSet->textureReplacements[k];
-				int	textureReplacementMode = 0;
-				if ( textureSet->textureReplacementMask & (1 << k) )
-					textureReplacementMode = ( j == 0 || j == 7 ? 2 : ( j == 1 ? 3 : 1 ) );
+				int	textureReplacementMode =
+					( !( textureSet->textureReplacementMask & (1 << k) ) ? 0 : int( textureReplModes & 3U ) );
+				textureSlotMap = textureSlotMap >> 4;
+				textureReplModes = textureReplModes >> 2;
 				if ( j == 0 ) {
 					if ( (scene->hasOption(Scene::DoLighting) && scene->hasVisMode(Scene::VisNormalsOnly)) || useErrorColor ) {
-						texturePath = nullptr;
+						texturePath = &emptyTexturePath;
 						textureReplacement = (useErrorColor ? 0xFFFF00FFU : 0xFFFFFFFFU);
 						textureReplacementMode = 1;
-					} else if ( texturePath && !textureReplacementMode && scene->hasOption(Scene::DoErrorColor) ) {
+					} else if ( !texturePath->empty() && !textureReplacementMode && scene->hasOption(Scene::DoErrorColor) ) {
 						textureReplacement = 0xFFFF00FFU;
 						textureReplacementMode = 1;
 					}
 				}
 				if ( j == 1 && !scene->hasOption(Scene::DoLighting) ) {
-					texturePath = nullptr;
+					texturePath = &emptyTexturePath;
 					textureReplacement = 0xFFFF8080U;
 					textureReplacementMode = 3;
 				}
 				const CE2Material::UVStream *	uvStream = layer->uvStream;
 				if ( j == 2 && i == mat->alphaSourceLayer )
 					uvStream = mat->alphaUVStream;
-				lsp->getSFTexture( texunit, texUniforms[j], &(replUniforms[j]), texturePath, textureReplacement, textureReplacementMode, uvStream );
+				texUniforms[j] = lsp->getSFTexture( texunit, replUniforms[j], *texturePath, textureReplacement, textureReplacementMode, uvStream );
 			}
 		} else {
 			prog->uni1f_l( prog->uniLocation("lm.layers[%d].material.textureSet.floatParam", i), 1.0f );
-			for ( int j = 0; j < 9 && j < CE2Material::TextureSet::maxTexturePaths; j++ ) {
-				lsp->getSFTexture( texunit, texUniforms[j], &(replUniforms[j]), nullptr, defaultSFTextureSet[j], int(j < 6), layer->uvStream );
-			}
+			for ( int j = 0; j < 9 && j < CE2Material::TextureSet::maxTexturePaths; j++ )
+				texUniforms[j] = 0;
 		}
 		prog->uni1iv_l( prog->uniLocation("lm.layers[%d].material.textureSet.textures", i), texUniforms, 9 );
 		prog->uni4fv_l( prog->uniLocation("lm.layers[%d].material.textureSet.textureReplacements", i), replUniforms, 9 );
@@ -1219,7 +1293,8 @@ bool Renderer::setupProgramCE2( const NifModel * nif, Program * prog, Shape * me
 		FloatVector4	uvScaleAndOffset( uvStream->scaleAndOffset );
 		if ( layer->material ) [[likely]] {
 			prog->uni4srgb_l( prog->uniLocation("lm.layers[%d].material.color", i), layer->material->color );
-			int	materialFlags = layer->material->colorModeFlags & 3;
+			// disable vertex color tint for 1LayerMouth
+			int	materialFlags = layer->material->colorModeFlags & ( mat->shaderModel != 9 ? 3 : 1 );
 			if ( layer->material->flipbookFlags & 1 ) [[unlikely]]
 				materialFlags = materialFlags | setFlipbookParameters( *(layer->material), uvScaleAndOffset );
 			prog->uni1i_l( prog->uniLocation("lm.layers[%d].material.flags", i), materialFlags );
@@ -1230,24 +1305,15 @@ bool Renderer::setupProgramCE2( const NifModel * nif, Program * prog, Shape * me
 		prog->uni4f_l( prog->uniLocation("lm.layers[%d].uvStream.scaleAndOffset", i), uvScaleAndOffset );
 		prog->uni1b_l( prog->uniLocation("lm.layers[%d].uvStream.useChannelTwo", i), (uvStream->channel > 1) );
 
-		if ( !i )
+		if ( !blender )
 			continue;
-		const CE2Material::Blender *	blender;
-		if ( ( blender = mat->blenders[i - 1] ) == nullptr ) [[unlikely]] {
-			prog->uni1i_l( prog->uniLocation("lm.blenders[%d].maskTexture", i - 1), -1 );
-			prog->uni4f_l( prog->uniLocation("lm.blenders[%d].maskTextureReplacement", i - 1), FloatVector4( 0.0f ) );
-			prog->uni1i_l( prog->uniLocation("lm.blenders[%d].blendMode", i - 1), 0 );
-			prog->uni1i_l( prog->uniLocation("lm.blenders[%d].colorChannel", i - 1), 0 );
-			continue;
-		}
 		uvStream = blender->uvStream;
 		if ( !uvStream )
 			uvStream = &defaultUVStream;
 		prog->uni4f_l( prog->uniLocation("lm.blenders[%d].uvStream.scaleAndOffset", i - 1), uvStream->scaleAndOffset );
 		prog->uni1b_l( prog->uniLocation("lm.blenders[%d].uvStream.useChannelTwo", i - 1), (uvStream->channel > 1) );
-		int	texUniform = 0;
 		FloatVector4	replUniform( 0.0f );
-		lsp->getSFTexture( texunit, texUniform, &replUniform, blender->texturePath, blender->textureReplacement, int(blender->textureReplacementEnabled), uvStream );
+		int	texUniform = lsp->getSFTexture( texunit, replUniform, *(blender->texturePath), blender->textureReplacement, int(blender->textureReplacementEnabled), uvStream );
 		prog->uni1i_l( prog->uniLocation("lm.blenders[%d].maskTexture", i - 1), texUniform );
 		if ( texUniform < 0 )
 			prog->uni4f_l( prog->uniLocation("lm.blenders[%d].maskTextureReplacement", i - 1), replUniform );
@@ -1267,7 +1333,7 @@ bool Renderer::setupProgramCE2( const NifModel * nif, Program * prog, Shape * me
 	while ( itx.hasNext() ) {
 		itx.next();
 
-		if ( !activateTextureUnit( itx.key() ) )
+		if ( !activateClientTexture( itx.key() ) )
 			return false;
 
 		auto it = itx.value();
@@ -1627,7 +1693,7 @@ bool Renderer::setupProgramCE1( const NifModel * nif, Program * prog, Shape * me
 	while ( itx.hasNext() ) {
 		itx.next();
 
-		if ( !activateTextureUnit( itx.key() ) )
+		if ( !activateClientTexture( itx.key() ) )
 			return false;
 
 		auto it = itx.value();
@@ -1934,7 +2000,7 @@ bool Renderer::setupProgramFO3( const NifModel * nif, Program * prog, Shape * me
 	while ( itx.hasNext() ) {
 		itx.next();
 
-		if ( !activateTextureUnit( itx.key() ) )
+		if ( !activateClientTexture( itx.key() ) )
 			return false;
 
 		auto it = itx.value();
@@ -2094,9 +2160,10 @@ void Renderer::setupFixedFunction( Shape * mesh )
 	if ( !mesh->scene->hasOption(Scene::DoTexturing) )
 		return;
 
+	int	stage = 0;
+
 	if ( TexturingProperty * texprop = props.get<TexturingProperty>() ) {
 		// standard multi texturing property
-		int stage = 0;
 
 		if ( texprop->bind( 1, mesh->coords, stage ) ) {
 			// dark
@@ -2258,10 +2325,12 @@ void Renderer::setupFixedFunction( Shape * mesh )
 	} else if ( TextureProperty * texprop = props.get<TextureProperty>() ) {
 		// old single texture property
 		texprop->bind( mesh->coords );
+		stage++;
 	} else if ( BSShaderLightingProperty * texprop = props.get<BSShaderLightingProperty>() ) {
 		// standard multi texturing property
 		if ( texprop->bind( 0, mesh->coords ) ) {
 			//, mesh->coords, stage ) )
+			stage++;
 			// base
 			glTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE );
 
@@ -2282,6 +2351,7 @@ void Renderer::setupFixedFunction( Shape * mesh )
 	} else {
 		glDisable( GL_TEXTURE_2D );
 	}
+	fixedFuncTexUnits = (unsigned char) stage;
 }
 
 void Renderer::drawSkyBox( Scene * scene )

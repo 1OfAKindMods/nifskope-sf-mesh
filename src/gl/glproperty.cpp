@@ -438,20 +438,6 @@ bool TexturingProperty::bind( int id, const QString & fname )
 		glMatrixMode( GL_TEXTURE );
 		glLoadIdentity();
 
-		if ( textures[id].hasTransform ) {
-			// Sign order is important here: get it backwards and we rotate etc.
-			// around (-center, -center)
-			glTranslatef( textures[id].center[0], textures[id].center[1], 0 );
-
-			// rotation appears to be in radians
-			glRotatef( rad2deg( textures[id].rotation ), 0, 0, 1 );
-			// It appears that the scaling here is relative to center
-			glScalef( textures[id].tiling[0], textures[id].tiling[1], 1 );
-			glTranslatef( textures[id].translation[0], textures[id].translation[1], 0 );
-
-			glTranslatef( -textures[id].center[0], -textures[id].center[1], 0 );
-		}
-
 		glMatrixMode( GL_MODELVIEW );
 		return true;
 	}
@@ -474,7 +460,7 @@ bool TexturingProperty::bind( int id, const QVector<QVector<Vector2> > & texcoor
 
 bool TexturingProperty::bind( int id, const QVector<QVector<Vector2> > & texcoords, int stage )
 {
-	return ( activateTextureUnit( stage ) && bind( id, texcoords ) );
+	return ( activateTextureUnit( stage ) && activateClientTexture( stage ) && bind( id, texcoords ) );
 }
 
 QString TexturingProperty::fileName( int id ) const
@@ -929,7 +915,7 @@ void BSShaderLightingProperty::clear()
 	sfMaterialPath.clear();
 }
 
-bool BSShaderLightingProperty::getSFTexture( int & texunit, int & texUniform, FloatVector4 * replUniform, const std::string_view * texturePath, std::uint32_t textureReplacement, int textureReplacementMode, const CE2Material::UVStream * uvStream )
+int BSShaderLightingProperty::getSFTexture( int & texunit, FloatVector4 & replUniform, const std::string_view & texturePath, std::uint32_t textureReplacement, int textureReplacementMode, const CE2Material::UVStream * uvStream )
 {
 	FloatVector4	c( textureReplacement );
 	c *= 1.0f / 255.0f;
@@ -940,10 +926,10 @@ bool BSShaderLightingProperty::getSFTexture( int & texunit, int & texUniform, Fl
 			c = c + c - 1.0f;					// SNORM
 	}
 	do {
-		size_t	n;
-		if ( !( texturePath && ( n = texturePath->length() ) > 0 && n <= 1024 ) )
-			break;
-		if ( !( texunit >= 3 && texunit < TexCache::num_texture_units && activateTextureUnit(texunit, true) ) )
+		size_t	n = texturePath.length();
+		if ( ( n - 1 ) & ~( size_t(1023) ) )
+			break;		// empty path or not enough space in tmpBuf
+		if ( !( texunit >= 3 && texunit < TexCache::num_texture_units && activateTextureUnit( texunit ) ) )
 			break;
 
 		TexClampMode	clampMode = TexClampMode::WRAP_S_WRAP_T;
@@ -960,24 +946,21 @@ bool BSShaderLightingProperty::getSFTexture( int & texunit, int & texUniform, Fl
 
 		// convert std::string_view to a temporary array of QChar
 		std::uint16_t	tmpBuf[1024];
-		convertStringToUInt16( tmpBuf, texturePath->data(), n );
+		convertStringToUInt16( tmpBuf, texturePath.data(), n );
 
 		if ( !bind( QStringView( tmpBuf, qsizetype( n ) ), false, clampMode ) )
 			break;
 
-		texUniform = texunit - 2;
 		texunit++;
-		return true;
+		return texunit - 3;
 
 	} while ( false );
 
-	if ( textureReplacementMode > 0 && replUniform ) {
-		texUniform = -1;
-		*replUniform = c;
-		return true;
+	if ( textureReplacementMode > 0 ) {
+		replUniform = c;
+		return -1;
 	}
-	texUniform = 0;
-	return false;
+	return 0;
 }
 
 void BSShaderLightingProperty::setMaterial( Material * newMaterial )
@@ -1007,16 +990,15 @@ void BSShaderLightingProperty::loadSFMaterial()
 	try {
 		CE2MaterialDB *	materials = nif->getCE2Materials();
 		if ( materials ) {
-			if ( sfMaterialPath.empty() ) [[unlikely]] {
-				// for editor markers
-				if ( typeid( *this ) == typeid( BSEffectShaderProperty ) )
-					sf_material = materials->loadMaterial( "materials/effects/xtests/effectmaterialchecker.mat" );
+			if ( sfMaterialPath.empty() && typeid( *this ) == typeid( BSEffectShaderProperty ) ) [[unlikely]] {
+				// default material for editor markers
+				sf_material = materials->loadMaterial( "materials/effects/xtests/effectmaterialchecker.mat" );
 			} else {
 				sf_material = materials->loadMaterial( sfMaterialPath );
+				sf_material_valid = bool( sf_material );
+				if ( !sf_material_valid )
+					sf_material = materials->loadMaterial( "materials/test/generic/test_generic_white.mat" );
 			}
-			sf_material_valid = bool( sf_material );
-			if ( !sf_material_valid )
-				sf_material = materials->loadMaterial( "materials/test/generic/test_generic_white.mat" );
 			sfMaterialDB_ID = nif->getCE2MaterialDB_ID();
 		}
 	} catch ( std::exception& e ) {

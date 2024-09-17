@@ -70,6 +70,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <QListView>
 #include <QTreeView>
 #include <QStandardItemModel>
+#include <QStyleFactory>
 
 #include "ba2file.hpp"
 #include "bsamodel.h"
@@ -197,6 +198,11 @@ NifSkope::NifSkope()
 {
 	// Init UI
 	ui->setupUi( this );
+
+	for ( const auto & s : QStyleFactory::keys() ) {
+		if ( s.compare( "Fusion", Qt::CaseInsensitive ) != 0 )
+			ui->mTheme->addAction( s )->setCheckable( true );
+	}
 
 	qApp->installEventFilter( this );
 
@@ -381,6 +387,9 @@ void NifSkope::exitRequested()
 
 NifSkope::~NifSkope()
 {
+	// work around crash that would occur if the UV editor is still open and it is the last window
+	disconnect( qApp, &QApplication::lastWindowClosed, this, &NifSkope::exitRequested );
+
 	delete ui;
 	if ( currentArchive )
 		delete currentArchive;
@@ -876,7 +885,7 @@ bool NifSkope::loadArchivesFromFolder( QString archive )
 			size_t	prvCnt = currentArchive->getArchiveFileCnt();
 			currentArchive->loadArchivePath( fullPath.toStdString().c_str(), &archiveFilterFunction );
 			if ( currentArchive->getArchiveFileCnt() > prvCnt )
-				currentArchiveNames += archiveNames[i].mid( 1 );
+				currentArchiveNames += archiveNames[i];
 		} catch ( std::exception & ) {
 			qCWarning( nsIo ) << QString( "The BSA %1 could not be opened." ).arg( fullPath );
 		}

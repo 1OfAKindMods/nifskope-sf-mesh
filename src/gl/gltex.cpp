@@ -88,8 +88,8 @@ void initializeTextureUnits( const QOpenGLContext * context )
 		//qDebug() << "texture units" << TexCache::num_texture_units;
 	} else {
 		qCWarning( nsGl ) << QObject::tr( "Multitexturing not supported." );
-		TexCache::num_texture_units = 1;
-		TexCache::num_txtunits_client = 1;
+		TexCache::num_texture_units = 0;
+		TexCache::num_txtunits_client = 0;
 	}
 
 	if ( context->hasExtension( "GL_EXT_texture_filter_anisotropic" ) ) {
@@ -109,39 +109,41 @@ void initializeTextureUnits( const QOpenGLContext * context )
 	initializeTextureLoaders( context );
 }
 
-bool activateTextureUnit( int stage, bool noClient )
+bool activateTextureUnit( int stage )
 {
-	if ( TexCache::num_texture_units <= 1 )
+	if ( stage >= TexCache::num_texture_units ) [[unlikely]]
 		return ( stage == 0 );
 
-	if ( stage < TexCache::num_texture_units ) {
+	glActiveTexture( GL_TEXTURE0 + stage );
+	return true;
+}
 
-		glActiveTexture( GL_TEXTURE0 + stage );
-		if ( stage < TexCache::num_txtunits_client && !noClient )
-			glClientActiveTexture( GL_TEXTURE0 + stage );
-		return true;
-	}
+bool activateClientTexture( int stage )
+{
+	if ( stage >= TexCache::num_txtunits_client ) [[unlikely]]
+		return ( stage == 0 );
 
-	return false;
+	glClientActiveTexture( GL_TEXTURE0 + stage );
+	return true;
 }
 
 void resetTextureUnits( int numTex )
 {
-	if ( TexCache::num_texture_units <= 1 ) {
+	if ( !TexCache::num_texture_units ) {
 		glDisable( GL_TEXTURE_2D );
 		return;
 	}
 
-	for ( int x = std::min( numTex, TexCache::num_texture_units ); --x >= 0; ) {
+	for ( int x = std::min( std::max< int >( numTex, 1 ), TexCache::num_texture_units ); --x >= 0; ) {
 		glActiveTexture( GL_TEXTURE0 + x );
 		glDisable( GL_TEXTURE_2D );
 		glMatrixMode( GL_TEXTURE );
 		glLoadIdentity();
 		glMatrixMode( GL_MODELVIEW );
-		if ( x < TexCache::num_txtunits_client ) {
-			glClientActiveTexture( GL_TEXTURE0 + x );
-			glDisableClientState( GL_TEXTURE_COORD_ARRAY );
-		}
+	}
+	for ( int x = TexCache::num_txtunits_client; --x >= 0; ) {
+		glClientActiveTexture( GL_TEXTURE0 + x );
+		glDisableClientState( GL_TEXTURE_COORD_ARRAY );
 	}
 }
 
