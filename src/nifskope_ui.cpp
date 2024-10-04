@@ -873,8 +873,9 @@ void NifSkope::onLoadComplete( bool success, QString & fname )
 	// Center the model on load
 	ogl->center();
 
-	// Expand the top level of Block List tree
-	ui->list->expandToDepth(0);
+	// Only in tree view mode: expand the top level of Block List tree
+	if ( ui->list->model() != nif )
+		ui->list->expandToDepth(0);
 
 	// Hide Progress Bar
 	QTimer::singleShot( timeout, progress, SLOT( hide() ) );
@@ -1071,8 +1072,16 @@ void NifSkope::reloadTheme()
 void NifSkope::loadTheme()
 {
 	QSettings settings;
-	theme = WindowTheme( settings.value( "Theme", ThemeDark ).toInt() );
-	ui->mTheme->actions()[theme]->setChecked( true );
+	auto	a = ui->mTheme->actions();
+	{
+		int	n = settings.value( "Theme", ThemeDark ).toInt();
+		if ( n < 0 || n >= a.size() ) {
+			n = 0;
+			settings.setValue( "Theme", n );
+		}
+		theme = WindowTheme( n );
+		a[theme]->setChecked( true );
+	}
 
 	toolbarSize = ToolbarSize( settings.value( "Settings/Theme/Large Icons", ToolbarLarge ).toBool() );
 
@@ -1083,7 +1092,6 @@ void NifSkope::loadTheme()
 	{
 	default:
 		{
-			auto	a = ui->mTheme->actions();
 			qsizetype	n = a.size();
 			qsizetype	i = std::min< qsizetype >( std::max< qsizetype >( qsizetype( theme ), 0 ), n - 1 );
 			if ( i != qsizetype( theme ) ) {
