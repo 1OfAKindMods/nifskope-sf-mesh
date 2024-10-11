@@ -269,6 +269,15 @@ void setStringsNiMesh( NifModel * nif, const QModelIndex & iBlock, QStringList &
 		setStringsArray( nif, nif->getIndex( iData, i ), strings, "Component Semantics", "Name" );
 }
 //! Get strings for NiSequence
+static const char * controlledBlockStringNames[7] = {
+	"Target Name",
+	"Node Name",
+	"Property Type",
+	"Controller Type",
+	"Controller ID",
+	"Interpolator ID",
+	nullptr
+};
 QStringList getStringsNiSequence( NifModel * nif, const QModelIndex & iBlock )
 {
 	QStringList strings;
@@ -278,12 +287,13 @@ QStringList getStringsNiSequence( NifModel * nif, const QModelIndex & iBlock )
 
 	for ( int i = 0; i < nif->rowCount( iControlledBlocks ); i++ ) {
 		auto iChild = nif->getIndex( iControlledBlocks, i );
-		strings << nif->resolveString( iChild, "Target Name" )
-				<< nif->resolveString( iChild, "Node Name" )
-				<< nif->resolveString( iChild, "Property Type" )
-				<< nif->resolveString( iChild, "Controller Type" )
-				<< nif->resolveString( iChild, "Controller ID" )
-				<< nif->resolveString( iChild, "Interpolator ID" );
+		for ( int j = 0; controlledBlockStringNames[j]; j++ ) {
+			auto iString = nif->getIndex( iChild, controlledBlockStringNames[j] );
+			QString s;
+			if ( iString.isValid() )
+				s = nif->resolveString( iString );
+			strings << s;
+		}
 	}
 
 	return strings;
@@ -297,12 +307,12 @@ void setStringsNiSequence( NifModel * nif, const QModelIndex & iBlock, QStringLi
 
 	for ( int i = 0; i < nif->rowCount( iControlledBlocks ); i++ ) {
 		auto iChild = nif->getIndex( iControlledBlocks, i );
-		nif->set<QString>( iChild, "Target Name", strings.takeFirst() );
-		nif->set<QString>( iChild, "Node Name", strings.takeFirst() );
-		nif->set<QString>( iChild, "Property Type", strings.takeFirst() );
-		nif->set<QString>( iChild, "Controller Type", strings.takeFirst() );
-		nif->set<QString>( iChild, "Controller ID", strings.takeFirst() );
-		nif->set<QString>( iChild, "Interpolator ID", strings.takeFirst() );
+		for ( int j = 0; controlledBlockStringNames[j]; j++ ) {
+			QString s = strings.takeFirst();
+			auto iString = nif->getIndex( iChild, controlledBlockStringNames[j] );
+			if ( iString.isValid() )
+				nif->set<QString>( iString, s );
+		}
 	}
 }
 
@@ -1111,6 +1121,9 @@ public:
 		return {};
 	}
 
+	static void fixFO76ShaderPropertyName( NifModel * nif, char * blockData, const QModelIndex & iBlock,
+											const QString & blockType, const QStringList & strings );
+
 	bool isApplicable( const NifModel * nif, const QModelIndex & index ) override final
 	{
 		Q_UNUSED( index );
@@ -1155,6 +1168,8 @@ public:
 							ds >> strings;
 
 						QModelIndex block = nif->insertNiBlock( bType, nif->getBlockCount() );
+						if ( buffer.pos() <= ( data.size() - 4 ) )
+							fixFO76ShaderPropertyName( nif, data.data() + buffer.pos(), block, bType, strings );
 						nif->loadIndex( buffer, block );
 						blockLink( nif, index, block );
 
@@ -1179,6 +1194,23 @@ public:
 		return QModelIndex();
 	}
 };
+
+void spPasteBlock::fixFO76ShaderPropertyName( NifModel * nif, char * blockData, const QModelIndex & iBlock,
+												const QString & blockType, const QStringList & strings )
+{
+	if ( nif->getBSVersion() < 151 )
+		return;
+	if ( !( blockType == "BSLightingShaderProperty" || blockType == "BSEffectShaderProperty" ) )
+		return;
+	// hack to work around issues with pasting Fallout 76 and Starfield shader property blocks
+	// where the data is conditional based on the block name being empty
+	QModelIndex	iName = nif->getIndex( iBlock, "Name" );
+	if ( iName.isValid() && !strings.isEmpty() ) {
+		nif->set<QString>( iName, strings.first() );
+		// write the new string index to the buffer (FIXME: this may be non-portable)
+		*( reinterpret_cast< std::int32_t * >( blockData ) ) = nif->get<qint32>( iName );
+	}
+}
 
 REGISTER_SPELL( spPasteBlock )
 
@@ -1248,6 +1280,8 @@ public:
 						if ( nif->checkVersion( 0x14010001, 0 ) )
 							ds >> strings;
 
+						if ( buffer.pos() <= ( data.size() - 4 ) )
+							spPasteBlock::fixFO76ShaderPropertyName( nif, data.data() + buffer.pos(), index, bType, strings );
 						nif->loadIndex( buffer, index );
 
 						// NiDataStream RTTI arg values
@@ -1462,6 +1496,8 @@ QModelIndex spPasteBranch::cast( NifModel * nif, const QModelIndex & index )
 						bType = nif->extractRTTIArgs( bType, metadata );
 
 						QModelIndex block = nif->insertNiBlock( bType, -1 );
+						if ( buffer.pos() <= ( data.size() - 4 ) )
+							spPasteBlock::fixFO76ShaderPropertyName( nif, data.data() + buffer.pos(), block, bType, strings );
 						if ( !nif->loadAndMapLinks( buffer, block, blockMap ) )
 							return index;
 
