@@ -75,12 +75,12 @@ int main( int argc, char * argv[] )
 	if ( auto a = qobject_cast<QApplication *>(app.data()) ) {
 		a->setOrganizationName( "NifTools" );
 		a->setOrganizationDomain( "niftools.org" );
-		a->setApplicationName( "NifSkope " + NifSkopeVersion::rawToMajMin( NIFSKOPE_VERSION ) );
+		a->setApplicationName( "NifSkope SF Mesh Tool " + NifSkopeVersion::rawToMajMin( NIFSKOPE_VERSION ) );
 		a->setApplicationVersion( NIFSKOPE_VERSION );
 #ifdef NIFSKOPE_REVISION
-		a->setApplicationDisplayName( "NifSkope " + NifSkopeVersion::rawToDisplay( NIFSKOPE_VERSION, true ) + " (build " + NIFSKOPE_REVISION + ", " + __DATE__ + ")" );
+		a->setApplicationDisplayName( "NifSkope SF Mesh Tool " + NifSkopeVersion::rawToDisplay( NIFSKOPE_VERSION, true ) + " (build " + NIFSKOPE_REVISION + ", " + __DATE__ + ")" );
 #else
-		a->setApplicationDisplayName( "NifSkope " + NifSkopeVersion::rawToDisplay( NIFSKOPE_VERSION, true ) + " (" + __DATE__ + ")" );
+		a->setApplicationDisplayName( "NifSkope SF Mesh Tool " + NifSkopeVersion::rawToDisplay( NIFSKOPE_VERSION, true ) + " (" + __DATE__ + ")" );
 #endif
 
 		// Must set current directory or this causes issues with several features

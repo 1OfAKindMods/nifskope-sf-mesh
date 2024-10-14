@@ -1,4 +1,4 @@
-﻿# NifSkope 2.0.dev9 Meshageddon Edition
+﻿# NifSkope SF Mesh Tool 2.0.dev9
 
 NifSkope is a tool for opening and editing the NetImmerse file format (NIF). NIF is used by video games such as Morrowind, Oblivion, Skyrim, Fallout 3/NV/4/76, Starfield, Civilization IV, and more.
 
@@ -6,12 +6,42 @@ This is an experimental fork of 2.0.dev9 with many improvements to Starfield sup
 
 ### Meshageddon Edition
 
-This is an extra experimental fork of the experimental fo76tools fork of NifSkope
-with some extra spells, too specialized (and ugly) to upstream. Thei tools are intended for modders to repair mods broken with the 1.11.36 Starfield update.
+This is a pure fork of fo76utils version of Nifskope with a few additional spells for a rather specific issue:
 
-* Using the included spells (plugins), it is possible to fix custom Starfield nifs that reference vanilla meshes when Bethesda performs a mass
-* nifs can be fixed individually or in bulk
-* (WIP) Extract and rename vanilla mesh references, avoiding issues in the future
+When version 1.11.36 of Starfield was released, Bethesda updated every mesh in the game, causing evey mesh to be renamed.
+Any .nif file that referenced vanilla .mesh files was broken. Basically it broke most mods.
+
+Starfield 1.11.36 was released before Creation Kit, Q1 2024 - it has been quite a while. I didn't expect this to still be necessary, but I was quite
+new to the community, and did not yet know that mod outhers could forbid others from fixing their mods then disappearing.
+This is probably why you are here, and it is most unfortunate.
+
+This is intended as a rough-around the edges tool for mod authors to fix their mods, but if they haven't, and don't allow patching... players must.
+
+## Repairing the old .nifs in bulk
+
+Use the bulk mesh fix spell to repair the .nifs, then convert them to internal geometry so it can't happen again.
+
+# Fix the mesh paths
+
+* Disable "Convert to internal Geometry on load" under Settings->NIF
+* Disable Auto-Sanitizie on Save in the File menu
+* Go to spells, bulk update mesh paths
+* Select the folder for the mod you need to fix, hit go.
+* After it finishes the last .nif, Nifskope will act like you need to save, and you can, but you don't need to.
+
+Don't worry if things fail to show up -- some things wont until the mod is deployed.
+It reports on what it did and generates a detailed log file.
+
+# Convert to Internal Geometry (And Sanitize) in Bulk
+(Technically optional, but recommended)
+
+* ENABLE "Convert to internal Geometry on load" under Settings->NIF
+* ENABLE The Auto-Sanitizie on Save checkbox in the File menu if so desired
+* Go to spells, bulk Open and Save - again browse to the same folder and go
+
+  Note: If any issues are encoutered, there will be popups. Most of them are informational - just let them stack up and close the porgram when it is done to be rid of the popups.
+  Note2: This spell does no logging
+
 
 ### Download
 
