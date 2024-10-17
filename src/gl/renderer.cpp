@@ -1220,15 +1220,12 @@ bool Renderer::setupProgramCE2( const NifModel * nif, Program * prog, Shape * me
 	// material layers
 	int	texUniforms[9];
 	FloatVector4	replUniforms[9];
-	// limit the number of layers to 6, or 2 if the shader model is Eye1Layer
-	int	numLayers = std::countr_one( mat->layerMask & ( mat->shaderModel != 41 ? 0x3FU : 0x03U ) );
+	// limit the number of layers to 6, or 2 if the shader model is Eye1Layer, or 5 for Skin5Layer
+	int	numLayers = std::countr_one( mat->layerMask & ( mat->shaderModel != 41 ?
+														( mat->shaderModel != 48 ? 0x3FU : 0x1FU ) : 0x03U ) );
 	prog->uni1i( "lm.numLayers", numLayers );
 	for ( int i = 0; i < numLayers; i++ ) {
 		const CE2Material::Layer *	layer = mat->layers[i];
-		for ( int j = 0; j < 9; j++ ) {
-			texUniforms[j] = 0;
-			replUniforms[j] = FloatVector4( 0.0f );
-		}
 		std::uint32_t	textureSlotMap = 0;
 		std::uint32_t	textureReplModes = 0x0055955E;	// 2, 3, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1
 		const CE2Material::Blender *	blender = nullptr;
@@ -1251,7 +1248,7 @@ bool Renderer::setupProgramCE2( const NifModel * nif, Program * prog, Shape * me
 		if ( !textureSet ) [[unlikely]]
 			textureSet = &CE2Material::defaultTextureSet;
 		prog->uni1f_l( prog->uniLocation("lm.layers[%d].material.textureSet.floatParam", i), textureSet->floatParam );
-		for ( int j = 0; j < 9 && j < CE2Material::TextureSet::maxTexturePaths; j++ ) {
+		for ( int j = 0; j < 9; j++ ) {
 			int	k = j + int( textureSlotMap & 15U );
 			const std::string_view *	texturePath = textureSet->texturePaths[k];
 			std::uint32_t	textureReplacement = textureSet->textureReplacements[k];
@@ -1259,10 +1256,11 @@ bool Renderer::setupProgramCE2( const NifModel * nif, Program * prog, Shape * me
 				( !( textureSet->textureReplacementMask & (1 << k) ) ? 0 : int( textureReplModes & 3U ) );
 			textureSlotMap = textureSlotMap >> 4;
 			textureReplModes = textureReplModes >> 2;
+			const CE2Material::UVStream *	uvStream = layer->uvStream;
 			if ( j == 0 ) {
 				if ( (scene->hasOption(Scene::DoLighting) && scene->hasVisMode(Scene::VisNormalsOnly)) || useErrorColor ) {
 					texturePath = &emptyTexturePath;
-					textureReplacement = (useErrorColor ? 0xFFFF00FFU : 0xFFFFFFFFU);
+					textureReplacement = ( useErrorColor ? 0xFFFF00FFU : 0xFFFFFFFFU );
 					textureReplacementMode = 1;
 				} else if ( !texturePath->empty() && !textureReplacementMode && scene->hasOption(Scene::DoErrorColor) ) {
 					textureReplacement = 0xFFFF00FFU;
@@ -1272,10 +1270,10 @@ bool Renderer::setupProgramCE2( const NifModel * nif, Program * prog, Shape * me
 				texturePath = &emptyTexturePath;
 				textureReplacement = 0xFFFF8080U;
 				textureReplacementMode = 3;
-			}
-			const CE2Material::UVStream *	uvStream = layer->uvStream;
-			if ( j == 2 && i == mat->alphaSourceLayer )
+			} else if ( j == 2 && ( mat->flags & CE2Material::Flag_HasOpacity ) && i == mat->alphaSourceLayer ) {
 				uvStream = mat->alphaUVStream;
+			}
+			replUniforms[j] = FloatVector4( 0.0f );
 			texUniforms[j] = lsp->getSFTexture( texunit, replUniforms[j], *texturePath, textureReplacement, textureReplacementMode, uvStream );
 		}
 		if ( blendMode == 4 ) [[unlikely]] {
@@ -1295,9 +1293,9 @@ bool Renderer::setupProgramCE2( const NifModel * nif, Program * prog, Shape * me
 		}
 		if ( mat->shaderModel == 44 ) [[unlikely]] {	// Hair1Layer
 			if ( !texUniforms[3] && ( mat->flags & CE2Material::Flag_IsHair ) && mat->hairSettings ) {
-				float	hairRoughness = float( std::sqrt( std::max( mat->hairSettings->roughness, 0.0f ) ) );
+				float	hairRoughness = mat->hairSettings->roughness;
 				texUniforms[3] = -1;
-				replUniforms[3] = FloatVector4( hairRoughness );
+				replUniforms[3] = FloatVector4( ( ( hairRoughness - 2.0f ) * hairRoughness + 2.0f ) * hairRoughness );
 			}
 		}
 		prog->uni1iv_l( prog->uniLocation("lm.layers[%d].material.textureSet.textures", i), texUniforms, 9 );
