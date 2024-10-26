@@ -282,11 +282,11 @@ void NifModel::updateSettings()
 {
 	QSettings settings;
 
-	settings.beginGroup( "Settings/NIF/Startup Defaults" );
+	settings.beginGroup( "Settings/Nif/Startup Defaults" );
 
-	cfg.startupVersion = settings.value( "Version", "20.0.0.5" ).toString();
-	cfg.userVersion = settings.value( "User Version", "11" ).toInt();
-	cfg.userVersion2 = settings.value( "User Version 2", "11" ).toInt();
+	cfg.startupVersion = settings.value( "Version", "20.2.0.7" ).toString();
+	cfg.userVersion = settings.value( "User Version", "12" ).toInt();
+	cfg.userVersion2 = settings.value( "User Version 2", "100" ).toInt();
 
 	settings.endGroup();
 }
@@ -1824,12 +1824,36 @@ public:
 	static bool processAllItems( NifModel * nif );
 };
 
+bool NifModel::checkInternalGeometry( const QModelIndex & blockIndex )
+{
+	if ( !blockIndex.isValid() ) {
+		int	n = getBlockCount();
+		for ( int i = 0; i < n; i++ ) {
+			QModelIndex	b = getBlockIndex( i );
+			if ( isNiBlock( b, "BSGeometry" ) && !checkInternalGeometry( b ) )
+				return false;
+		}
+		return true;
+	}
+	if ( !isNiBlock( blockIndex, "BSGeometry" ) )
+		return true;
+	if ( get<quint32>( blockIndex, "Flags" ) & 0x0200 )
+		return true;
+	if ( QMessageBox::question( parentWindow, tr( "NifSkope warning" ),
+								tr( "This operation can only be performed on internal geometry. Convert meshes?" ) )
+		!= QMessageBox::Yes ) {
+		return false;
+	}
+	spMeshFileImport::processAllItems( this );
+	return bool( get<quint32>( blockIndex, "Flags" ) & 0x0200 );
+}
+
 bool NifModel::load( QIODevice & device, const char* fileName )
 {
 	QSettings settings;
 	bool ignoreSize = settings.value( "Ignore Block Size", true ).toBool();
 	bool convertSFMeshes =
-		settings.value( "Settings/Nif/Convert Starfield meshes to internal geometry on load", false ).toBool();
+		settings.value( "Settings/Nif/Convert meshes to internal geometry on load", false ).toBool();
 
 	clear();
 

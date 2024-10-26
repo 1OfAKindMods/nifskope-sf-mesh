@@ -1444,3 +1444,86 @@ void NifSkope::migrateSettings() const
 	}
 #endif
 }
+
+bool NifSkope::batchProcessFiles(
+	const QStringList & fileList, bool (*processFunc)( NifModel *, void * ), void * processFuncData )
+{
+	qsizetype	n = fileList.size();
+	if ( n < 1 || !processFunc )
+		return true;
+
+	QDialog	dlg;
+	QLabel *	lb = new QLabel( &dlg );
+	lb->setText( QString( "Processing file %1..." ).arg( fileList.first() ) );
+	QProgressBar *	pb = new QProgressBar( &dlg );
+	pb->setMinimum( 0 );
+	pb->setMaximum( int( n ) );
+	QPushButton *	cb = new QPushButton( "Cancel", &dlg );
+	QGridLayout *	grid = new QGridLayout;
+	dlg.setLayout( grid );
+	grid->addWidget( lb, 0, 0, 1, 3 );
+	grid->addWidget( pb, 1, 0, 1, 3 );
+	grid->addWidget( cb, 2, 1, 1, 1 );
+	QObject::connect( cb, &QPushButton::clicked, &dlg, &QDialog::reject );
+	dlg.setModal( true );
+	dlg.setResult( QDialog::Accepted );
+	dlg.show();
+
+	NifModel *	tmpNif = nullptr;
+	bool	noErrors = true;
+	for ( qsizetype i = 0; i < n; i++ ) {
+		const QString &	filePath = fileList[i];
+		lb->setText( QString( "Processing file %1..." ).arg( filePath ) );
+		try {
+			QCoreApplication::processEvents();
+			if ( dlg.result() == QDialog::Rejected )
+				return false;
+
+			QString	fileName( QDir::fromNativeSeparators( filePath ) );
+			tmpNif = new NifModel();
+			tmpNif->setBatchProcessingMode( true );
+			{
+				QFile	f( fileName );
+				if ( !f.open( QIODeviceBase::ReadOnly ) )
+					throw FO76UtilsError( "error opening file" );
+				std::string	tmp( fileName.toStdString() );
+				tmpNif->load( f, tmp.c_str() );
+			}
+
+			QCoreApplication::processEvents();
+			if ( dlg.result() == QDialog::Rejected )
+				return false;
+
+			bool	saveFlag = processFunc( tmpNif, processFuncData );
+			tmpNif->setBatchProcessingMode( false );
+
+			QCoreApplication::processEvents();
+			if ( dlg.result() == QDialog::Rejected )
+				return false;
+
+			if ( saveFlag ) {
+				QFile	f( fileName );
+				if ( !f.open( QIODeviceBase::WriteOnly ) )
+					throw FO76UtilsError( "error opening file" );
+				tmpNif->save( f );
+			}
+
+			delete tmpNif;
+			tmpNif = nullptr;
+		} catch ( std::exception & e ) {
+			if ( tmpNif ) {
+				delete tmpNif;
+				tmpNif = nullptr;
+			}
+			if ( QMessageBox::critical( this, "NifSkope error",
+										QString( "Error processing '%1': %2. Continue?" ).arg( filePath ).arg( e.what() ),
+										QMessageBox::Yes | QMessageBox::No ) != QMessageBox::Yes ) {
+				return false;
+			}
+			noErrors = false;
+		}
+		pb->setValue( int( i + 1 ) );
+	}
+
+	return noErrors;
+}

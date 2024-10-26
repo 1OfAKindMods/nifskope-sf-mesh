@@ -11,7 +11,7 @@ bool spTangentSpace::isApplicable( const NifModel * nif, const QModelIndex & ind
 		if ( !i )
 			return false;
 		if ( nif->isNiBlock( index, "BSGeometry" ) )
-			return ( ( nif->get<quint32>(i, "Flags") & 0x0200 ) != 0 );
+			return true;
 		return i->hasStrType( "BSMeshData" );
 	}
 
@@ -51,7 +51,8 @@ bool spTangentSpace::isApplicable( const NifModel * nif, const QModelIndex & ind
 QModelIndex spTangentSpace::cast( NifModel * nif, const QModelIndex & iBlock )
 {
 	if ( nif->getBSVersion() >= 170 ) {
-		tangentSpaceSFMesh( nif, iBlock );
+		if ( nif->checkInternalGeometry( iBlock ) )
+			tangentSpaceSFMesh( nif, iBlock );
 		return iBlock;
 	}
 
@@ -538,7 +539,17 @@ public:
 
 		return QModelIndex();
 	}
+
+	static QModelIndex cast_Static( NifModel * nif, const QModelIndex & index );
 };
+
+QModelIndex spAddAllTangentSpaces::cast_Static( NifModel * nif, const QModelIndex & index )
+{
+	spAddAllTangentSpaces	tmp;
+	if ( tmp.isApplicable( nif, index ) )
+		return tmp.cast( nif, index );
+	return index;
+}
 
 REGISTER_SPELL( spAddAllTangentSpaces )
 

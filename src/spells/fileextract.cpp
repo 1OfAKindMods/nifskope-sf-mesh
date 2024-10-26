@@ -1,6 +1,7 @@
 #include "spellbook.h"
 
 #include <QDialog>
+#include <QCheckBox>
 #include <QFileDialog>
 #include <QGridLayout>
 #include <QLabel>
@@ -16,6 +17,7 @@
 #include "libfo76utils/src/material.hpp"
 #include "model/nifmodel.h"
 #include "io/nifstream.h"
+#include "nifskope.h"
 
 #ifdef Q_OS_WIN32
 #  include <direct.h>
@@ -65,7 +67,7 @@ public:
 	}
 
 	static std::string getNifItemFilePath( NifModel * nif, const NifItem * item );
-	static std::string getOutputDirectory();
+	static std::string getOutputDirectory( const NifModel * nif = nullptr );
 	static void writeFileWithPath( const std::string & fileName, const char * buf, qsizetype bufSize );
 
 	bool isApplicable( const NifModel * nif, const QModelIndex & index ) override final
@@ -105,23 +107,25 @@ std::string spResourceFileExtract::getNifItemFilePath( NifModel * nif, const Nif
 	return Game::GameManager::get_full_path( filePath, archiveFolder, extension );
 }
 
-std::string spResourceFileExtract::getOutputDirectory()
+std::string spResourceFileExtract::getOutputDirectory( const NifModel * nif )
 {
 	QSettings	settings;
 	QString	key = QString( "Spells//Extract File/Last File Path" );
 	QString	dstPath( settings.value( key ).toString() );
-	{
-		QFileDialog	dialog;
+	if ( !( nif && nif->getBatchProcessingMode() ) ) {
+		QFileDialog	dialog( nullptr, "Select Export Data Path" );
 		dialog.setFileMode( QFileDialog::Directory );
 		if ( !dstPath.isEmpty() )
 			dialog.setDirectory( dstPath );
 		if ( !dialog.exec() )
 			return std::string();
 		dstPath = dialog.selectedFiles().at( 0 );
-	}
-	if ( dstPath.isEmpty() )
+		if ( dstPath.isEmpty() )
+			return std::string();
+		settings.setValue( key, QVariant(dstPath) );
+	} else if ( dstPath.isEmpty() ) {
 		return std::string();
-	settings.setValue( key, QVariant(dstPath) );
+	}
 
 	std::string	fullPath( dstPath.replace( QChar('\\'), QChar('/') ).toStdString() );
 	if ( !fullPath.ends_with( '/' ) )
@@ -192,7 +196,7 @@ QModelIndex spResourceFileExtract::cast( NifModel * nif, const QModelIndex & ind
 			return index;
 		}
 
-		std::string	fullPath( getOutputDirectory() );
+		std::string	fullPath( getOutputDirectory( nif ) );
 		if ( fullPath.empty() )
 			return index;
 		fullPath += filePath;
@@ -263,7 +267,7 @@ QModelIndex spExtractAllResources::cast( NifModel * nif, const QModelIndex & ind
 	if ( fileSet.begin() == fileSet.end() )
 		return index;
 
-	std::string	dstPath( spResourceFileExtract::getOutputDirectory() );
+	std::string	dstPath( spResourceFileExtract::getOutputDirectory( nif ) );
 	if ( dstPath.empty() )
 		return index;
 
@@ -338,7 +342,7 @@ QModelIndex spExtractAllMaterials::cast( NifModel * nif, const QModelIndex & ind
 	if ( fileSet.empty() )
 		return index;
 
-	std::string	dstPath( spResourceFileExtract::getOutputDirectory() );
+	std::string	dstPath( spResourceFileExtract::getOutputDirectory( nif ) );
 	if ( dstPath.empty() )
 		return index;
 
@@ -413,11 +417,12 @@ public:
 		return ( item->name() == "BSGeometry" && ( nif->get<quint32>(item, "Flags") & 0x0200 ) != 0 );
 	}
 
-	bool processItem( NifModel * nif, NifItem * item, const std::string & outputDirectory, std::vector<QString> &createdMeshFiles );
+	bool processItem( NifModel * nif, NifItem * item, const std::string & outputDirectory, const QString & meshDir, std::vector<QString> &createdMeshFiles );
 	QModelIndex cast( NifModel * nif, const QModelIndex & index ) override final;
 };
 
-bool spMeshFileExport::processItem( NifModel * nif, NifItem * item, const std::string & outputDirectory, std::vector<QString> &createdMeshFiles )
+bool spMeshFileExport::processItem(
+	NifModel * nif, NifItem * item, const std::string & outputDirectory, const QString & meshDir, std::vector<QString> &createdMeshFiles )
 {
 	quint32	flags;
 	if ( !( item && item->name() == "BSGeometry" && ( (flags = nif->get<quint32>(item, "Flags")) & 0x0200 ) != 0 ) )
@@ -437,22 +442,28 @@ bool spMeshFileExport::processItem( NifModel * nif, NifItem * item, const std::s
 				continue;
 			haveMeshes = true;
 
-			QBuffer	meshBuf;
-			meshBuf.open( QIODevice::WriteOnly );
+			QByteArray	meshBuf;
 			{
-				NifOStream	nifStream( nif, &meshBuf );
+				QBuffer	tmpBuf( &meshBuf );
+				tmpBuf.open( QIODevice::WriteOnly );
+				NifOStream	nifStream( nif, &tmpBuf );
 				nif->saveItem( nif->getItem( meshData, false ), nifStream );
 			}
+			if ( !( nif->get<quint32>( meshData, "Num Meshlets" ) | nif->get<quint32>( meshData, "Num Cull Data" ) ) )
+				meshBuf.chop( 8 );	// end of file after LODs if there are no meshlets
 
 			QCryptographicHash	h( QCryptographicHash::Sha1 );
-			h.addData( meshBuf.data() );
+			h.addData( meshBuf );
 			meshPaths[l] = h.result().toHex();
-			meshPaths[l].insert( 20, QChar('\\') );
+			if ( meshDir.isEmpty() )
+				meshPaths[l].insert( 20, QChar('\\') );
+			else
+				meshPaths[l].insert( 0, meshDir );
 
 			std::string	fullPath( outputDirectory );
 			fullPath += Game::GameManager::get_full_path( meshPaths[l], "geometries/", ".mesh" );
 			try {
-				spResourceFileExtract::writeFileWithPath( fullPath, meshBuf.data().data(), meshBuf.data().size() );
+				spResourceFileExtract::writeFileWithPath( fullPath, meshBuf.data(), meshBuf.size() );
 				createdMeshFiles.push_back(meshPaths[l]); // Track the created mesh file
 			} catch ( std::exception & e ) {
 				QMessageBox::critical( nullptr, "NifSkope error", QString("Error extracting file: %1" ).arg( e.what() ) );
@@ -484,43 +495,57 @@ QModelIndex spMeshFileExport::cast( NifModel * nif, const QModelIndex & index )
 	if ( item && !( item->name() == "BSGeometry" && (nif->get<quint32>(item, "Flags") & 0x0200) != 0 ) )
 		return index;
 
-	std::string	outputDirectory( spResourceFileExtract::getOutputDirectory() );
+	std::string	outputDirectory( spResourceFileExtract::getOutputDirectory( nif ) );
 	if ( outputDirectory.empty() )
 		return index;
 
+	QString	meshDir;
+	{
+		QSettings	settings;
+		meshDir = settings.value( "Settings/Nif/Mesh Export Dir", QString() ).toString().trimmed().toLower();
+	}
+	meshDir.replace( QChar('/'), QChar('\\') );
+	while ( meshDir.endsWith( QChar('\\') ) )
+		meshDir.chop( 1 );
+	while ( meshDir.startsWith( QChar('\\') ) )
+		meshDir.remove( 0, 1 );
+	if ( !meshDir.isEmpty() )
+		meshDir.append( QChar('\\') );
 	std::vector<QString> createdMeshFiles; // Vector to store created mesh file paths
 	bool	meshesConverted = false;
 	if ( item ) {
-		meshesConverted = processItem( nif, item, outputDirectory, createdMeshFiles );
+		meshesConverted = processItem( nif, item, outputDirectory, meshDir, createdMeshFiles );
 	} else {
 		for ( int b = 0; b < nif->getBlockCount(); b++ )
-			meshesConverted |= processItem( nif, nif->getBlockItem( qint32(b) ), outputDirectory, createdMeshFiles );
+			meshesConverted |= processItem( nif, nif->getBlockItem( qint32(b) ), outputDirectory, meshDir, createdMeshFiles );
 	}
-	if ( meshesConverted )	{
+	if ( meshesConverted && !nif->getBatchProcessingMode() )
 		Game::GameManager::close_resources();
 
-		// Write the list of created mesh files to a text file in JSON array format
-		QFile outputFile(outputFileName);
-		if (outputFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
-			QTextStream out(&outputFile);
-			out << "[\n";
-			for (int i = 0; i < createdMeshFiles.size(); ++i) {
-				QString relativePath(createdMeshFiles[i]);
-				relativePath.replace("\\", "__");
-				relativePath.replace("_", "\\");  // restoring backslashes in the path
+	QFileInfo fileInfo = nif->getFileInfo();
+	QString outputFileName = fileInfo.absolutePath() + "/" + fileInfo.fileName() + ".achlist";
 
-				out << "\t\"Data\\\\geometries\\\\" << relativePath << ".mesh\"";
-				if (i != createdMeshFiles.size() - 1) {
-					out << ",\n";
-				}
+	// Write the list of created mesh files to a text file in JSON array format
+	QFile outputFile(outputFileName);
+	if (outputFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+		QTextStream out(&outputFile);
+		out << "[\n";
+		for (int i = 0; i < createdMeshFiles.size(); ++i) {
+			QString relativePath(createdMeshFiles[i]);
+			relativePath.replace("\\", "__");
+			relativePath.replace("_", "\\");  // restoring backslashes in the path
+
+			out << "\t\"Data\\\\geometries\\\\" << relativePath << ".mesh\"";
+			if (i != createdMeshFiles.size() - 1) {
+				out << ",\n";
 			}
-			out << "\n]";
-			outputFile.close();
-		} else {
-			QMessageBox::warning(nullptr, "NifSkope warning", "Unable to write created mesh file list.");
 		}
-	return index;
+		out << "\n]";
+		outputFile.close();
+	} else {
+		QMessageBox::warning(nullptr, "NifSkope warning", "Unable to write created mesh file list.");
 	}
+	return index;
 }
 
 REGISTER_SPELL( spMeshFileExport )
@@ -570,7 +595,10 @@ bool spMeshFileImport::processItem( NifModel * nif, NifItem * item )
 			if ( meshPath.isEmpty() )
 				continue;
 			if ( !nif->getResourceFile( meshData[l], meshPath, "geometries/", ".mesh" ) ) {
-				QMessageBox::critical( nullptr, "NifSkope error", QString("Failed to load mesh file '%1'" ).arg( meshPath ) );
+				if ( nif->getBatchProcessingMode() )
+					throw FO76UtilsError( "failed to load mesh file '%s'", meshPath.toStdString().c_str() );
+				else
+					QMessageBox::critical( nullptr, "NifSkope error", QString("Failed to load mesh file '%1'" ).arg( meshPath ) );
 				return false;
 			}
 		}
@@ -628,4 +656,195 @@ QModelIndex spMeshFileImport::cast( NifModel * nif, const QModelIndex & index )
 }
 
 REGISTER_SPELL( spMeshFileImport )
+
+//! Batch process multiple NIF files
+class spBatchProcessFiles final : public Spell
+{
+public:
+	QString name() const override final { return Spell::tr( "Process Multiple NIF Files" ); }
+	QString page() const override final { return Spell::tr( "Batch" ); }
+	QIcon icon() const override final
+	{
+		return QIcon();
+	}
+	bool constant() const override final { return true; }
+	bool instant() const override final { return true; }
+
+	bool isApplicable( [[maybe_unused]] const NifModel * nif, const QModelIndex & index ) override final
+	{
+		return !index.isValid();
+	}
+
+	enum {
+		spellFlagInternalGeom = 1,
+		spellFlagRemoveUnusedStrings = 2,
+		spellFlagLODGen = 4,
+		spellFlagTangentSpace = 8,
+		spellFlagMeshlets = 16,
+		spellFlagUpdateBounds = 32,
+		spellFlagExternalGeom = 64
+	};
+	static bool processFile( NifModel * nif, void * p );
+	QModelIndex cast( NifModel * nif, const QModelIndex & index ) override final;
+};
+
+class spRemoveUnusedStrings
+{
+public:
+	static QModelIndex cast_Static( NifModel * nif, const QModelIndex & index );
+};
+
+class spSimplifySFMesh
+{
+public:
+	static QModelIndex cast_Static( NifModel * nif, const QModelIndex & index );
+};
+
+class spAddAllTangentSpaces
+{
+public:
+	static QModelIndex cast_Static( NifModel * nif, const QModelIndex & index );
+};
+
+class spGenerateMeshlets
+{
+public:
+	static QModelIndex cast_Static( NifModel * nif, const QModelIndex & index );
+};
+
+class spUpdateAllBounds
+{
+public:
+	static QModelIndex cast_Static( NifModel * nif, const QModelIndex & index );
+};
+
+bool spBatchProcessFiles::processFile( NifModel * nif, void * p )
+{
+	int	spellMask = *( reinterpret_cast< int * >( p ) );
+	bool	fileChanged = false;
+
+	if ( ( spellMask & spellFlagInternalGeom ) && nif->getBSVersion() >= 170 ) {
+		spMeshFileImport::processAllItems( nif );
+		fileChanged = true;
+	}
+
+	if ( spellMask & spellFlagRemoveUnusedStrings ) {
+		spRemoveUnusedStrings::cast_Static( nif, QModelIndex() );
+		fileChanged = true;
+	}
+
+	if ( ( spellMask & spellFlagLODGen ) && nif->getBSVersion() >= 170 ) {
+		spSimplifySFMesh::cast_Static( nif, QModelIndex() );
+		fileChanged = true;
+	}
+
+	if ( spellMask & spellFlagTangentSpace ) {
+		spAddAllTangentSpaces::cast_Static( nif, QModelIndex() );
+		fileChanged = true;
+	}
+
+	if ( ( spellMask & spellFlagMeshlets ) && nif->getBSVersion() >= 170 ) {
+		spGenerateMeshlets::cast_Static( nif, QModelIndex() );
+		fileChanged = true;
+	}
+
+	if ( spellMask & spellFlagUpdateBounds ) {
+		spUpdateAllBounds::cast_Static( nif, QModelIndex() );
+		fileChanged = true;
+	}
+
+	if ( ( spellMask & spellFlagExternalGeom ) && nif->getBSVersion() >= 170 ) {
+		spMeshFileExport	sp;
+		sp.cast( nif, QModelIndex() );
+		fileChanged = true;
+	}
+
+	return fileChanged;
+}
+
+QModelIndex spBatchProcessFiles::cast( [[maybe_unused]] NifModel * nif, const QModelIndex & index )
+{
+	if ( index.isValid() )
+		return index;
+
+	int	spellMask = 0;
+	{
+		QDialog	dlg;
+		QLabel *	lb = new QLabel( &dlg );
+		lb->setText( "Batch process multiple models, overwriting the original NIF files" );
+		QLabel *	lb2 = new QLabel( "Select spells to be cast, in the order listed:", &dlg );
+		QCheckBox *	checkInternalGeom = new QCheckBox( "Convert to Internal Geometry", &dlg );
+		QCheckBox *	checkRemoveUnusedStrings = new QCheckBox( "Remove Unused Strings", &dlg );
+		QCheckBox *	checkLODGen = new QCheckBox( "Generate LODs", &dlg );
+		QCheckBox *	checkTangentSpace = new QCheckBox( "Add Tangent Spaces and Update", &dlg );
+		QCheckBox *	checkMeshlets = new QCheckBox( "Generate Meshlets and Update Bounds", &dlg );
+		QCheckBox *	checkUpdateBounds = new QCheckBox( "Update Bounds", &dlg );
+		QCheckBox *	checkExternalGeom = new QCheckBox( "Convert to External Geometry", &dlg );
+		QPushButton *	okButton = new QPushButton( "OK", &dlg );
+		QPushButton *	cancelButton = new QPushButton( "Cancel", &dlg );
+
+		QGridLayout *	grid = new QGridLayout;
+		dlg.setLayout( grid );
+		grid->addWidget( lb, 0, 0, 1, 5 );
+		grid->addWidget( new QLabel( "", &dlg ), 1, 0, 1, 5 );
+		grid->addWidget( lb2, 2, 0, 1, 5 );
+		grid->addWidget( checkInternalGeom, 3, 0, 1, 5 );
+		grid->addWidget( checkRemoveUnusedStrings, 4, 0, 1, 5 );
+		grid->addWidget( checkLODGen, 5, 0, 1, 5 );
+		grid->addWidget( checkTangentSpace, 6, 0, 1, 5 );
+		grid->addWidget( checkMeshlets, 7, 0, 1, 5 );
+		grid->addWidget( checkUpdateBounds, 8, 0, 1, 5 );
+		grid->addWidget( checkExternalGeom, 9, 0, 1, 5 );
+		grid->addWidget( new QLabel( "", &dlg ), 10, 0, 1, 5 );
+		grid->addWidget( okButton, 11, 1, 1, 1 );
+		grid->addWidget( cancelButton, 11, 3, 1, 1 );
+
+		QObject::connect( okButton, &QPushButton::clicked, &dlg, &QDialog::accept );
+		QObject::connect( cancelButton, &QPushButton::clicked, &dlg, &QDialog::reject );
+
+		if ( dlg.exec() != QDialog::Accepted )
+			return index;
+
+		if ( checkInternalGeom->isChecked() )
+			spellMask = spellFlagInternalGeom;
+		if ( checkRemoveUnusedStrings->isChecked() )
+			spellMask = spellMask | spellFlagRemoveUnusedStrings;
+		if ( checkLODGen->isChecked() )
+			spellMask = spellMask | spellFlagLODGen;
+		if ( checkTangentSpace->isChecked() )
+			spellMask = spellMask | spellFlagTangentSpace;
+		if ( checkMeshlets->isChecked() )
+			spellMask = spellMask | spellFlagMeshlets;
+		if ( checkUpdateBounds->isChecked() )
+			spellMask = spellMask | spellFlagUpdateBounds;
+		if ( checkExternalGeom->isChecked() )
+			spellMask = spellMask | spellFlagExternalGeom;
+		if ( !spellMask )
+			return index;
+	}
+
+	QStringList	fileList;
+	{
+		QFileDialog	fd( nullptr, "Select NIF Files to Process" );
+		fd.setFileMode( QFileDialog::ExistingFiles );
+		fd.setNameFilter( "NIF files (*.nif)" );
+		if ( fd.exec() )
+			fileList = fd.selectedFiles();
+	}
+	if ( fileList.isEmpty() )
+		return index;
+	if ( spellMask & spellFlagExternalGeom )
+		(void) spResourceFileExtract::getOutputDirectory();
+
+	NifSkope *	w = dynamic_cast< NifSkope * >( nif->getWindow() );
+	if ( w ) {
+		w->batchProcessFiles( fileList, &processFile, &spellMask );
+		if ( spellMask & spellFlagExternalGeom )
+			Game::GameManager::close_resources();
+	}
+
+	return index;
+}
+
+REGISTER_SPELL( spBatchProcessFiles )
 
