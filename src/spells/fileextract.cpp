@@ -413,11 +413,11 @@ public:
 		return ( item->name() == "BSGeometry" && ( nif->get<quint32>(item, "Flags") & 0x0200 ) != 0 );
 	}
 
-	bool processItem( NifModel * nif, NifItem * item, const std::string & outputDirectory );
+	bool processItem( NifModel * nif, NifItem * item, const std::string & outputDirectory, std::vector<QString> &createdMeshFiles );
 	QModelIndex cast( NifModel * nif, const QModelIndex & index ) override final;
 };
 
-bool spMeshFileExport::processItem( NifModel * nif, NifItem * item, const std::string & outputDirectory )
+bool spMeshFileExport::processItem( NifModel * nif, NifItem * item, const std::string & outputDirectory, std::vector<QString> &createdMeshFiles )
 {
 	quint32	flags;
 	if ( !( item && item->name() == "BSGeometry" && ( (flags = nif->get<quint32>(item, "Flags")) & 0x0200 ) != 0 ) )
@@ -453,6 +453,7 @@ bool spMeshFileExport::processItem( NifModel * nif, NifItem * item, const std::s
 			fullPath += Game::GameManager::get_full_path( meshPaths[l], "geometries/", ".mesh" );
 			try {
 				spResourceFileExtract::writeFileWithPath( fullPath, meshBuf.data().data(), meshBuf.data().size() );
+				createdMeshFiles.push_back(meshPaths[l]); // Track the created mesh file
 			} catch ( std::exception & e ) {
 				QMessageBox::critical( nullptr, "NifSkope error", QString("Error extracting file: %1" ).arg( e.what() ) );
 			}
@@ -487,17 +488,39 @@ QModelIndex spMeshFileExport::cast( NifModel * nif, const QModelIndex & index )
 	if ( outputDirectory.empty() )
 		return index;
 
+	std::vector<QString> createdMeshFiles; // Vector to store created mesh file paths
 	bool	meshesConverted = false;
 	if ( item ) {
-		meshesConverted = processItem( nif, item, outputDirectory );
+		meshesConverted = processItem( nif, item, outputDirectory, createdMeshFiles );
 	} else {
 		for ( int b = 0; b < nif->getBlockCount(); b++ )
-			meshesConverted |= processItem( nif, nif->getBlockItem( qint32(b) ), outputDirectory );
+			meshesConverted |= processItem( nif, nif->getBlockItem( qint32(b) ), outputDirectory, createdMeshFiles );
 	}
-	if ( meshesConverted )
+	if ( meshesConverted )	{
 		Game::GameManager::close_resources();
 
+		// Write the list of created mesh files to a text file in JSON array format
+		QFile outputFile(outputFileName);
+		if (outputFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+			QTextStream out(&outputFile);
+			out << "[\n";
+			for (int i = 0; i < createdMeshFiles.size(); ++i) {
+				QString relativePath(createdMeshFiles[i]);
+				relativePath.replace("\\", "__");
+				relativePath.replace("_", "\\");  // restoring backslashes in the path
+
+				out << "\t\"Data\\\\geometries\\\\" << relativePath << ".mesh\"";
+				if (i != createdMeshFiles.size() - 1) {
+					out << ",\n";
+				}
+			}
+			out << "\n]";
+			outputFile.close();
+		} else {
+			QMessageBox::warning(nullptr, "NifSkope warning", "Unable to write created mesh file list.");
+		}
 	return index;
+	}
 }
 
 REGISTER_SPELL( spMeshFileExport )
