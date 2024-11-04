@@ -906,12 +906,15 @@ void BSShaderLightingProperty::clear()
 {
 	Property::clear();
 
-	setMaterial(nullptr);
+	if ( material ) {
+		delete material;
+		material = nullptr;
+	}
 
 	sf_material = nullptr;
 	sfMaterialDB_ID = std::uint64_t(-1);
 	sf_material_valid = false;
-	sfMaterialPath.clear();
+	materialPath.clear();
 	sfMatDataBuf.clear();
 }
 
@@ -972,22 +975,43 @@ int BSShaderLightingProperty::getSFTexture( int & texunit, FloatVector4 & replUn
 	return 0;
 }
 
-void BSShaderLightingProperty::setMaterial( Material * newMaterial )
+void BSShaderLightingProperty::setMaterial( const NifModel * nif, const QModelIndex & index, bool isEffect )
 {
-	if (newMaterial && !newMaterial->isValid()) {
-		delete newMaterial;
-		newMaterial = nullptr;
-	}
-	if ( material && material != newMaterial ) {
+	if ( material ) {
 		delete material;
+		material = nullptr;
 	}
-	material = newMaterial;
+
+	bool	nameChanged = false;
+	if ( name != materialPath ) {
+		materialPath = name;
+		nameChanged = true;
+	}
+	bool	isAbstract = false;
+	Material *	newMaterial = nullptr;
+	if ( name.endsWith( QLatin1StringView( !isEffect ? ".bgsm" : ".bgem" ), Qt::CaseInsensitive ) ) {
+		if ( bsVersion >= 151 && !nameChanged ) {
+			const NifItem *	i = nif->getItem( index, "Material" );
+			isAbstract = ( i && nif->get<bool>( i, "Is Modified" ) );
+		}
+		if ( isEffect )
+			newMaterial = new EffectMaterial( name, nif, ( isAbstract ? index : QModelIndex() ) );
+		else
+			newMaterial = new ShaderMaterial( name, nif, ( isAbstract ? index : QModelIndex() ) );
+	}
+	if ( bsVersion >= 151 && !isAbstract )
+		const_cast< NifModel * >(nif)->loadFO76Material( index, newMaterial );
+
+	if ( newMaterial && !newMaterial->isValid() )
+		delete newMaterial;
+	else
+		material = newMaterial;
 }
 
 void BSShaderLightingProperty::setSFMaterial( const QString & mat_name )
 {
 	sfMaterialDB_ID = std::uint64_t(-1);
-	if ( mat_name == sfMaterialPath ) {
+	if ( mat_name == materialPath ) {
 		const NifModel *	nif = scene->nifModel;
 		const NifItem *	i = nif->getItem( iBlock, "Material" );
 		if ( i && nif->get<bool>( i, "Is Modified" ) ) {
@@ -1002,7 +1026,7 @@ void BSShaderLightingProperty::setSFMaterial( const QString & mat_name )
 			return;
 		}
 	} else {
-		sfMaterialPath = mat_name;
+		materialPath = mat_name;
 	}
 	loadSFMaterial();
 }
@@ -1017,8 +1041,8 @@ void BSShaderLightingProperty::loadSFMaterial()
 	sfMatDataBuf.clear();
 	const NifModel *	nif = scene->nifModel;
 	const CE2Material *	mat = nullptr;
-	if ( !sfMaterialPath.isEmpty() ) {
-		std::string	fullPath( Game::GameManager::get_full_path( sfMaterialPath, "materials/", ".mat" ) );
+	if ( !materialPath.isEmpty() ) {
+		std::string	fullPath( Game::GameManager::get_full_path( materialPath, "materials/", ".mat" ) );
 		try {
 			CE2MaterialDB *	materials = nif->getCE2Materials();
 			if ( materials )
@@ -1143,7 +1167,7 @@ QString BSShaderLightingProperty::fileName( int id ) const
 		return QString();
 
 	// Fallout 4 or 76 BGSM file
-	if ( bsVersion >= 130 && material && typeid(*material) == typeid(ShaderMaterial) ) {
+	if ( bsVersion >= 130 && material && material->isShaderMaterial() ) {
 		// BSLSP
 		auto m = static_cast<ShaderMaterial *>(material);
 		if ( m->isValid() ) {
@@ -1199,7 +1223,7 @@ QString BSShaderLightingProperty::fileName( int id ) const
 
 		if ( bsVersion < 151 )
 			return QString();
-	} else if ( bsVersion >= 130 && material && typeid(*material) == typeid(EffectMaterial) ) {
+	} else if ( bsVersion >= 130 && material && material->isEffectMaterial() ) {
 		// From Fallout 4 or 76 effect material file
 		auto m = static_cast<EffectMaterial*>(material);
 		if ( m->isValid() ) {
@@ -1308,17 +1332,12 @@ void BSLightingShaderProperty::updateImpl( const NifModel * nif, const QModelInd
 	BSShaderLightingProperty::updateImpl( nif, index );
 
 	if ( index == iBlock ) {
-		if ( name.endsWith(".bgsm", Qt::CaseInsensitive) && bsVersion < 170 ) {
-			setMaterial( new ShaderMaterial( name, nif ) );
-			if ( bsVersion >= 151 )
-				const_cast< NifModel * >(nif)->loadFO76Material( index, material );
-		} else {
-			setMaterial( nullptr );
-		}
-		updateParams(nif);
+		if ( bsVersion < 170 )
+			setMaterial( nif, index, false );
+		updateParams( nif );
 	}
 	else if ( index == iTextureSet ) {
-		updateParams(nif);
+		updateParams( nif );
 	}
 }
 
@@ -1547,16 +1566,11 @@ void BSEffectShaderProperty::updateImpl( const NifModel * nif, const QModelIndex
 	if ( index == iBlock ) {
 		if ( bsVersion < 83 )
 			return;
-		if ( name.endsWith(".bgem", Qt::CaseInsensitive) && bsVersion < 170 ) {
-			setMaterial( new EffectMaterial( name, nif ) );
-			if ( bsVersion >= 151 )
-				const_cast< NifModel * >(nif)->loadFO76Material( index, material );
-		} else {
-			setMaterial( nullptr );
-		}
-		updateParams(nif);
+		if ( bsVersion < 170 )
+			setMaterial( nif, index, true );
+		updateParams( nif );
 	} else if ( index == iTextureSet ) {
-		updateParams(nif);
+		updateParams( nif );
 	}
 }
 

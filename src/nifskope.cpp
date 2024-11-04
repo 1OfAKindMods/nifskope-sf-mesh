@@ -1489,6 +1489,8 @@ bool NifSkope::batchProcessFiles(
 				std::string	tmp( fileName.toStdString() );
 				tmpNif->load( f, tmp.c_str() );
 			}
+			if ( !tmpNif->getMessages().isEmpty() )
+				throw FO76UtilsError( "error parsing NIF data" );
 
 			QCoreApplication::processEvents();
 			if ( dlg.result() == QDialog::Rejected )

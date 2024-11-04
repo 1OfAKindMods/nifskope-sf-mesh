@@ -1,6 +1,7 @@
 #include "spellbook.h"
 #include "libfo76utils/src/material.hpp"
 #include "model/nifmodel.h"
+#include "io/material.h"
 
 #include <cctype>
 #include <random>
@@ -263,14 +264,15 @@ public:
 		return spStarfieldMaterialExport::canExportMaterial( nif, index );
 	}
 
-	static QString getOutputFileName( const NifModel * nif, const std::string_view & matFilePath );
+	static QString getOutputFileName( const NifModel * nif, const std::string_view & matFilePath, const char * e = ".mat" );
 	static std::string getBaseName( const std::string_view & fullPath );
 	static void renameMaterial(
 		std::string & matFileData, const std::string_view & matPath, const std::string_view & newPath );
 	QModelIndex cast( NifModel * nif, const QModelIndex & index ) override final;
 };
 
-QString spStarfieldMaterialSaveAs::getOutputFileName( const NifModel * nif, const std::string_view & matFilePath )
+QString spStarfieldMaterialSaveAs::getOutputFileName(
+	const NifModel * nif, const std::string_view & matFilePath, const char * e )
 {
 	QString	dirName = nif->getFolder();
 	bool	setLastFilePath = false;
@@ -282,11 +284,11 @@ QString spStarfieldMaterialSaveAs::getOutputFileName( const NifModel * nif, cons
 	if ( !dirName.isEmpty() && !dirName.endsWith( '/' ) )
 		dirName.append( QChar('/') );
 	dirName.append( QString::fromStdString( getBaseName( matFilePath ) ) );
-	QString	fileName = QFileDialog::getSaveFileName( qApp->activeWindow(), tr("Choose a .mat file for export"), dirName, "Material (*.mat)" );
+	QString	fileName = QFileDialog::getSaveFileName( qApp->activeWindow(), QString( "Choose a %1 file for export" ).arg( e ), dirName, QString( "Material (*%1)" ).arg( e ) );
 	if ( fileName.isEmpty() )
 		return QString();
-	if ( !fileName.endsWith( ".mat", Qt::CaseInsensitive ) )
-		fileName.append( ".mat" );
+	if ( !fileName.endsWith( QLatin1StringView( e ), Qt::CaseInsensitive ) )
+		fileName.append( e );
 	if ( setLastFilePath ) {
 		QSettings	settings;
 		settings.setValue( "Spells//Extract File/Last File Path", QFileInfo( fileName ).dir().absolutePath() );
@@ -1207,16 +1209,62 @@ public:
 
 	bool isApplicable( const NifModel * nif, const QModelIndex & index ) override final
 	{
+		if ( !( nif && nif->getBSVersion() >= 151 && index.isValid() ) )
+			return false;
+		if ( nif->getBSVersion() < 170 )
+			return canExportFO76Material( nif, index );
 		return spStarfieldMaterialExport::canExportMaterial( nif, index, true );
 	}
 
+	static bool canExportFO76Material( const NifModel * nif, const QModelIndex & index );
+	static void exportFO76Material( const NifModel * nif, const QModelIndex & idx );
 	QModelIndex cast( NifModel * nif, const QModelIndex & index ) override final;
 };
+
+bool spStarfieldEditedMaterialSaveAs::canExportFO76Material( const NifModel * nif, const QModelIndex & index )
+{
+	auto	iBlock = nif->getBlockIndex( index );
+	if ( nif->blockInherits( iBlock, "BSTriShape" ) )
+		iBlock = nif->getBlockIndex( nif->getLink( iBlock, "Shader Property" ) );
+	if ( !( nif->isNiBlock( iBlock, "BSLightingShaderProperty" )
+			|| nif->isNiBlock( iBlock, "BSEffectShaderProperty" ) ) ) {
+		return false;
+	}
+	const NifItem *	i = nif->getItem( iBlock, "Material" );
+	if ( !i )
+		return false;
+	return nif->get<bool>( i, "Is Modified" );
+}
+
+void spStarfieldEditedMaterialSaveAs::exportFO76Material( const NifModel * nif, const QModelIndex & idx )
+{
+	QModelIndex	iBlock = nif->getBlockIndex( idx );
+	QByteArray	data;
+	Material::createMaterialData( data, nif, iBlock );
+	if ( data.isEmpty() )
+		return;
+
+	bool	isEffect = nif->isNiBlock( iBlock, "BSEffectShaderProperty" );
+	try {
+		const char *	e = ( !isEffect ? ".bgsm" : ".bgem" );
+		QString	matFilePath = spStarfieldMaterialSaveAs::getOutputFileName(
+									nif, Game::GameManager::get_full_path( nif->get<QString>( iBlock, "Name" ),
+																			"materials/", e ), e );
+		if ( !matFilePath.isEmpty() ) {
+			QFile	matFile( matFilePath );
+			if ( !matFile.open( QIODeviceBase::WriteOnly ) )
+				throw FO76UtilsError( "Could not open output file" );
+			matFile.write( data );
+		}
+	} catch ( std::exception & e ) {
+		QMessageBox::critical( nullptr, "NifSkope error", QString( e.what() ) );
+	}
+}
 
 QModelIndex spStarfieldEditedMaterialSaveAs::cast( NifModel * nif, const QModelIndex & index )
 {
 	QModelIndex	idx = nif->getBlockIndex( index );
-	if ( nif->blockInherits( idx, "BSGeometry" ) )
+	if ( nif->blockInherits( idx, "BSGeometry" ) || nif->blockInherits( idx, "BSTriShape" ) )
 		idx = nif->getBlockIndex( nif->getLink( idx, "Shader Property" ) );
 	QString	matFilePath;
 	if ( nif->blockInherits( idx, "BSShaderProperty" ) ) {
@@ -1227,6 +1275,11 @@ QModelIndex spStarfieldEditedMaterialSaveAs::cast( NifModel * nif, const QModelI
 	}
 	if ( !idx.isValid() || matFilePath.isEmpty() )
 		return index;
+
+	if ( nif->getBSVersion() < 170 ) {
+		exportFO76Material( nif, idx );
+		return index;
+	}
 
 	AllocBuffers	matBuf;
 	const CE2Material *	mat = reinterpret_cast< const CE2Material * >( nif->updateSFMaterial( matBuf, idx ) );

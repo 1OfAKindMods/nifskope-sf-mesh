@@ -183,23 +183,25 @@ public:
 		if ( !item )
 			return false;
 		QModelIndex iBlock = nif->getBlockIndex( idx );
+		const QString &	itemName = item->name();
 
 		if ( nif->isNiBlock( iBlock, { "NiSourceTexture", "NiImage" } )
-				&& ( iBlock == idx.sibling( idx.row(), 0 ) || item->hasName( "File Name" ) ) )
+				&& ( iBlock == idx.sibling( idx.row(), 0 ) || itemName == "File Name" ) ) {
 			return true;
+		}
 
-		if ( !( item->hasName( "File Name" ) || item->hasName( "Textures" ) || item->hasName( "Path" ) ) )
+		if ( !( itemName == "File Name" || itemName == "Path" || itemName.startsWith( QLatin1StringView( "Texture" ) ) ) )
 			return false;
 
-		if ( nif->isNiBlock( iBlock, "BSShaderNoLightingProperty" ) && item->hasName( "File Name" ) )
+		if ( nif->isNiBlock( iBlock, "BSShaderNoLightingProperty" ) && itemName == "File Name" )
 			return true;
-		else if ( nif->isNiBlock( iBlock, "BSShaderTextureSet" ) && item->hasName( "Textures" ) )
+		else if ( nif->isNiBlock( iBlock, "BSShaderTextureSet" ) && itemName == "Textures" )
 			return true;
-		else if ( nif->isNiBlock( iBlock, "SkyShaderProperty" ) && item->hasName( "File Name" ) )
+		else if ( nif->isNiBlock( iBlock, "SkyShaderProperty" ) && itemName == "File Name" )
 			return true;
-		else if ( nif->isNiBlock( iBlock, "TileShaderProperty" ) && item->hasName( "File Name" ) )
+		else if ( nif->isNiBlock( iBlock, "TileShaderProperty" ) && itemName == "File Name" )
 			return true;
-		else if ( nif->getBSVersion() >= 170 && item->hasName( "Path" )
+		else if ( nif->getBSVersion() >= 151 && ( itemName == "Path" || itemName.startsWith( QLatin1StringView( "Texture " ) ) )
 					&& nif->blockInherits( iBlock, "BSShaderProperty" ) )
 			return true;
 
@@ -211,25 +213,25 @@ public:
 		QModelIndex iBlock = nif->getBlockIndex( idx );
 		QModelIndex iFile;
 		bool setExternal = false;
-		bool isSFMaterial = false;
+		bool isMaterialFile = false;
+		const NifItem *	i = nif->getItem( idx );
 
 		if ( nif->isNiBlock( iBlock, { "NiSourceTexture", "NiImage" } )
-				&& ( iBlock == idx.sibling( idx.row(), 0 ) || nif->itemName( idx ) == "File Name" ) )
-		{
+				&& ( iBlock == idx.sibling( idx.row(), 0 ) || i->hasName( "File Name" ) ) ) {
 			iFile = nif->getIndex( iBlock, "File Name" );
 			setExternal = true;
-		} else if ( nif->isNiBlock( iBlock, "BSShaderTextureSet" ) && nif->itemName( idx ) == "Textures" ) {
+		} else if ( nif->isNiBlock( iBlock, "BSShaderTextureSet" ) && i->hasName( "Textures" ) ) {
 			iFile = idx;
-		} else if ( nif->isNiBlock( iBlock, "BSShaderNoLightingProperty" ) && nif->itemName( idx ) == "File Name" ) {
+		} else if ( nif->isNiBlock( iBlock, "BSShaderNoLightingProperty" ) && i->hasName( "File Name" ) ) {
 			iFile = idx;
-		} else if ( nif->isNiBlock( iBlock, "SkyShaderProperty" ) && nif->itemName( idx ) == "File Name" ) {
+		} else if ( nif->isNiBlock( iBlock, "SkyShaderProperty" ) && i->hasName( "File Name" ) ) {
 			iFile = idx;
-		} else if ( nif->isNiBlock( iBlock, "TileShaderProperty" ) && nif->itemName( idx ) == "File Name" ) {
+		} else if ( nif->isNiBlock( iBlock, "TileShaderProperty" ) && i->hasName( "File Name" ) ) {
 			iFile = idx;
-		} else if ( nif->getBSVersion() >= 170 && nif->itemName( idx ) == "Path"
+		} else if ( nif->getBSVersion() >= 151 && ( i->name() == "Path" || i->name().startsWith( QLatin1StringView( "Texture " ) ) )
 					&& nif->blockInherits( iBlock, "BSShaderProperty" ) ) {
 			iFile = idx;
-			isSFMaterial = true;
+			isMaterialFile = true;
 		}
 
 		if ( !iFile.isValid() )
@@ -262,9 +264,14 @@ public:
 					}
 				}
 
-				if ( isSFMaterial ) {
-					for ( const NifItem * i = nif->getItem( iFile ); i; i = i->parent() ) {
-						if ( i->isAbstract() && i->hasStrType( "BSLayeredMaterial" ) && !nif->get<bool>( i, "Is Modified" ) ) {
+				if ( isMaterialFile ) {
+					for ( i = nif->getItem( iFile ); i; i = i->parent() ) {
+						if ( !i->isAbstract() )
+							continue;
+						const QString &	t = i->strType();
+						if ( !( t == "BSLayeredMaterial" || t.endsWith( QLatin1StringView( "MaterialDataFO76" ) ) ) )
+							continue;
+						if ( !nif->get<bool>( i, "Is Modified" ) ) {
 							nif->set<bool>( i, "Is Modified", true );
 							QMessageBox::warning( nullptr, "NifSkope warning", QString( "Changes to material data are not saved automatically, use the spell 'Material/Save Edited Material...'" ) );
 							break;
@@ -757,10 +764,11 @@ class spTextureTemplate final : public Spell
 		QString filename = file->text();
 
 		// TODO: Fix FileSelector class so that this isn't necessary.
-		if ( !filename.endsWith( ".PNG", Qt::CaseInsensitive ) && !filename.endsWith( ".BMP", Qt::CaseInsensitive ) )
+		if ( !filename.endsWith( QLatin1StringView( ".PNG" ), Qt::CaseInsensitive )
+			&& !filename.endsWith( QLatin1StringView( ".BMP" ), Qt::CaseInsensitive ) )
 			filename.append( ".png" );
 
-		if ( filename.endsWith( ".PNG", Qt::CaseInsensitive ) ) {
+		if ( filename.endsWith( QLatin1StringView( ".PNG" ), Qt::CaseInsensitive ) ) {
 			// Transparent PNG
 			img.save( filename );
 

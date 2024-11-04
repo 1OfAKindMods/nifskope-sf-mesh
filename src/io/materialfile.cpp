@@ -32,6 +32,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "material.h"
 #include "model/nifmodel.h"
+#include "fp32vec8.hpp"
 
 #include <QBuffer>
 #include <QDataStream>
@@ -45,20 +46,28 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define BGSM 0x4D534742
 #define BGEM 0x4D454742
 
-Material::Material( const QString & name, const NifModel * nif )
+Material::Material()
 {
-	if ( !name.isEmpty() && nif )
-		nif->getResourceFile( data, name, "materials", "" );
-	fileExists = !data.isEmpty();
 }
 
-bool Material::openFile()
+bool Material::openFile( const QString & name, const NifModel * nif, const QModelIndex & index )
 {
+	if ( !nif )
+		return false;
+
+	QByteArray	data;
+
+	if ( index.isValid() && nif->getBSVersion() >= 151 )
+		createMaterialData( data, nif, index );
+	if ( data.isEmpty() && !name.isEmpty() )
+		nif->getResourceFile( data, name, "materials", "" );
+
 	if ( data.isEmpty() )
 		return false;
 
 	QBuffer f( &data );
 	if ( f.open( QIODevice::ReadOnly ) ) {
+		QDataStream	in;
 		in.setDevice( &f );
 		in.setByteOrder( QDataStream::LittleEndian );
 		in.setFloatingPointPrecision( QDataStream::SinglePrecision );
@@ -69,13 +78,13 @@ bool Material::openFile()
 		if ( magic != BGSM && magic != BGEM )
 			return false;
 
-		return readFile();
+		return readFile( in );
 	}
 
 	return false;
 }
 
-bool Material::readFile()
+bool Material::readFile( QDataStream & in )
 {
 	in >> version;
 
@@ -103,31 +112,17 @@ bool Material::readFile()
 	return in.status() == QDataStream::Ok;
 }
 
-bool Material::isValid() const
+
+ShaderMaterial::ShaderMaterial( const QString & name, const NifModel * nif, const QModelIndex & index )
+	: Material()
 {
-	return readable && !data.isEmpty();
+	isBGSM = true;
+	readable = openFile( name, nif, index );
 }
 
-QStringList Material::textures() const
+bool ShaderMaterial::readFile( QDataStream & in )
 {
-	return textureList;
-}
-
-QString Material::getPath() const
-{
-	return localPath;
-}
-
-
-ShaderMaterial::ShaderMaterial( const QString & name, const NifModel * nif ) : Material( name, nif )
-{
-	if ( fileExists )
-		readable = openFile();
-}
-
-bool ShaderMaterial::readFile()
-{
-	Material::readFile();
+	Material::readFile( in );
 
 	size_t numTex = (version >= 17) ? 10 : 9;
 	for ( size_t i = 0; i < numTex; i++ ) {
@@ -204,15 +199,16 @@ bool ShaderMaterial::readFile()
 	return in.status() == QDataStream::Ok;
 }
 
-EffectMaterial::EffectMaterial( const QString & name, const NifModel * nif ) : Material( name, nif )
+EffectMaterial::EffectMaterial( const QString & name, const NifModel * nif, const QModelIndex & index )
+	: Material()
 {
-	if ( fileExists )
-		readable = openFile();
+	isBGEM = true;
+	readable = openFile( name, nif, index );
 }
 
-bool EffectMaterial::readFile()
+bool EffectMaterial::readFile( QDataStream & in )
 {
-	Material::readFile();
+	Material::readFile( in );
 
 	size_t numTex = ( version >= 10 ) ? ( version <= 20 ? 8 : 10 ) : 5;
 	for ( size_t i = 0; i < numTex; i++ ) {
@@ -262,4 +258,192 @@ bool EffectMaterial::readFile()
 	}
 
 	return in.status() == QDataStream::Ok;
+}
+
+
+void Material::createMaterialData( QByteArray & data, const NifModel * nif, const QModelIndex & index )
+{
+	if ( !( nif && nif->getBSVersion() >= 151 && index.isValid() ) )
+		return;
+	const NifItem *	m = nif->getItem( index );
+	if ( !m )
+		return;
+	bool	isEffect = nif->isNiBlock( m, "BSEffectShaderProperty" );
+	m = nif->getItem( m, "Material" );
+	if ( !( m && nif->get<bool>( m, "Is Modified" ) ) )
+		return;
+
+	QBuffer	f( &data );
+	if ( !f.open( QIODeviceBase::WriteOnly ) )
+		return;
+	QDataStream	s( &f );
+	s.setByteOrder( QDataStream::LittleEndian );
+	s.setFloatingPointPrecision( QDataStream::SinglePrecision );
+
+	s << quint32( !isEffect ? BGSM : BGEM );
+	quint32	version = std::max<quint32>( nif->get<quint32>( m, "Version" ), 20U );
+	s << version;
+	quint32	sf1 = nif->get<quint32>( m, "Shader Flags 1" );
+	quint32	sf2 = nif->get<quint32>( m, "Shader Flags 2" );
+	s << quint32( sf1 & 3U );	// tile flags
+	Vector2	uvOffset = nif->get<Vector2>( m, "UV Offset" );
+	Vector2	uvScale = nif->get<Vector2>( m, "UV Scale" );
+	s << uvOffset[0];
+	s << uvOffset[1];
+	s << uvScale[0];
+	s << uvScale[1];
+	s << nif->get<float>( m, "Alpha" );
+	s << quint8( bool( sf1 & 0x0004 ) );	// alpha blending
+	s << nif->get<quint32>( m, "Alpha Source Blend Mode" );
+	s << nif->get<quint32>( m, "Alpha Destination Blend Mode" );
+	s << nif->get<quint8>( m, "Alpha Test Threshold" );
+	s << quint8( bool( sf1 & 0x0008 ) );	// alpha testing
+	s << quint8( bool( sf1 & 0x0010 ) );	// Z buffer write
+	s << quint8( bool( sf1 & 0x0020 ) );	// Z buffer test
+	s << quint8( bool( sf1 & 0x0040 ) );	// screen space reflections
+	s << quint8( bool( sf1 & 0x0080 ) );	// SSR wetness control
+	s << quint8( bool( sf1 & 0x0100 ) );	// decal
+	s << quint8( bool( sf1 & 0x0200 ) );	// two sided
+	s << quint8( bool( sf1 & 0x0400 ) );	// decal no fade
+	s << quint8( bool( sf1 & 0x0800 ) );	// non-occluder
+	s << quint8( bool( sf1 & 0x1000 ) );	// refraction
+	s << quint8( bool( sf1 & 0x2000 ) );	// refraction falloff
+	s << nif->get<float>( m, "Refraction Power" );
+	s << quint8( bool( sf1 & 0x4000 ) );	// environment mapping
+	s << quint8( bool( sf1 & 0x8000 ) );	// grayscale to palette mapping
+	s << nif->get<quint8>( m, "Write Mask" );
+
+	std::string	tmp;
+	int	numTex = ( !( version < 21 && isEffect ) ? 10 : 8 );
+	for ( int i = 0; i < numTex; i++ ) {
+		tmp = nif->get<QString>( m, QString( "Texture %1" ).arg( i ) ).toStdString();
+		s << tmp.c_str();
+	}
+
+	if ( !isEffect ) {
+		s << quint8( bool( sf2 & 0x0001 ) );	// enable editor alpha ref
+		s << quint8( bool( sf2 & 0x0002 ) );	// translucency
+		s << quint8( bool( sf2 & 0x0004 ) );	// translucency thick object
+		s << quint8( bool( sf2 & 0x0008 ) );	// translucency mix albedo with subsurface color
+		Color3	c = nif->get<Color3>( m, "Translucency Subsurface Color" );
+		s << c[0];
+		s << c[1];
+		s << c[2];
+		s << nif->get<float>( m, "Translucency Transmissive Scale" );
+		s << nif->get<float>( m, "Translucency Turbulence" );
+		s << quint8( bool( sf2 & 0x0010 ) );	// specular enabled
+		c = nif->get<Color3>( m, "Specular Color" );
+		s << c[0];
+		s << c[1];
+		s << c[2];
+		s << nif->get<float>( m, "Specular Strength" );
+		s << nif->get<float>( m, "Smoothness" );
+		s << nif->get<float>( m, "Fresnel Power" );
+		FloatVector8	v( -1.0f );
+		const NifItem *	o = nif->getItem( m, "Wetness" );
+		if ( o ) {
+			v[0] = nif->get<float>( o, "Spec Scale" );
+			v[1] = nif->get<float>( o, "Spec Power" );
+			v[2] = nif->get<float>( o, "Min Var" );
+			v[3] = nif->get<float>( o, "Fresnel Power" );
+			v[4] = nif->get<float>( o, "Metalness" );
+		}
+		for ( size_t i = 0; i < 5; i++ )
+			s << v[i];
+		s << quint8( bool( sf2 & 0x0020 ) );	// PBR
+		s << quint8( bool( sf2 & 0x0040 ) );	// custom porosity
+		s << nif->get<float>( m, "Porosity Value" );
+		tmp = nif->get<QString>( m, "Root Material" ).toStdString();
+		s << tmp.c_str();
+		s << quint8( bool( sf2 & 0x0080 ) );	// anisotropic lighting
+		s << quint8( bool( sf2 & 0x0100 ) );	// emit enabled
+		if ( sf2 & 0x0100 ) {
+			c = nif->get<Color3>( m, "Emissive Color" );
+			s << c[0];
+			s << c[1];
+			s << c[2];
+		}
+		s << nif->get<float>( m, "Emissive Multiple" );
+		s << quint8( bool( sf2 & 0x0200 ) );	// model space normals
+		s << quint8( bool( sf2 & 0x0400 ) );	// external emittance
+		v = FloatVector8( 100.0f, 13.5f, 2.0f, 3.0f, 0.0f, 0.0f, 0.0f, 0.0f );
+		o = nif->getItem( m, "Luminance" );
+		if ( o ) {
+			v[0] = nif->get<float>( o, "Lum Emittance" );
+			v[1] = nif->get<float>( o, "Exposure Offset" );
+			v[2] = nif->get<float>( o, "Final Exposure Min" );
+			v[3] = nif->get<float>( o, "Final Exposure Max" );
+		}
+		s << v[0];
+		s << quint8( bool( sf2 & 0x0800 ) );	// use adaptive emissive
+		for ( size_t i = 1; i < 4; i++ )
+			s << v[i];
+		s << quint8( bool( sf2 & 0x1000 ) );	// receive shadows
+		s << quint8( bool( sf2 & 0x2000 ) );	// hide secret
+		s << quint8( bool( sf2 & 0x4000 ) );	// cast shadows
+		s << quint8( bool( sf2 & 0x8000 ) );	// dissolve fade
+		s << quint8( bool( sf2 & 0x00010000 ) );	// assume shadow mask
+		s << quint8( bool( sf2 & 0x00020000 ) );	// glow map
+		s << quint8( bool( sf2 & 0x00040000 ) );	// hair
+		c = nif->get<Color3>( m, "Hair Tint Color" );
+		s << c[0];
+		s << c[1];
+		s << c[2];
+		s << quint8( bool( sf2 & 0x00080000 ) );	// tree
+		s << quint8( bool( sf2 & 0x00100000 ) );	// FaceGen
+		s << quint8( bool( sf2 & 0x00200000 ) );	// skin tint
+		s << quint8( bool( sf2 & 0x00400000 ) );	// tessellate
+		s << nif->get<float>( m, "Grayscale to Palette Scale" );
+		s << quint8( bool( sf2 & 0x00800000 ) );	// skew specular alpha
+		s << quint8( bool( sf2 & 0x01000000 ) );	// terrain
+		if ( sf2 & 0x01000000 ) {
+			s << nif->get<float>( m, "Terrain Threshold Falloff" );
+			s << nif->get<float>( m, "Terrain Tiling Distance" );
+			s << nif->get<float>( m, "Terrain Rotation Angle" );
+		}
+	} else {
+		// effect material
+		if ( version >= 21 ) {
+			s << quint8( bool( sf2 & 0x0200 ) );	// glass enabled
+			if ( sf2 & 0x0200 ) {
+				Color3	c = nif->get<Color3>( m, "Glass Fresnel Color" );
+				s << c[0];
+				s << c[1];
+				s << c[2];
+				s << nif->get<float>( m, "Glass Refraction Scale" );
+				s << nif->get<float>( m, "Glass Blur Scale Base" );
+				if ( version >= 22 )
+					s << nif->get<float>( m, "Glass Blur Scale Factor" );
+			}
+		}
+		s << quint8( bool( sf2 & 0x0001 ) );	// environment mapping
+		s << nif->get<float>( m, "Environment Map Scale" );
+		s << quint8( bool( sf2 & 0x0002 ) );	// blood enabled
+		s << quint8( bool( sf2 & 0x0004 ) );	// effect lighting
+		s << quint8( bool( sf2 & 0x0008 ) );	// use falloff
+		s << quint8( bool( sf2 & 0x0010 ) );	// RGB falloff
+		s << quint8( bool( sf2 & 0x0020 ) );	// grayscale to palette alpha
+		s << quint8( bool( sf2 & 0x0040 ) );	// soft enabled
+		Color3	c = nif->get<Color3>( m, "Base Color" );
+		s << c[0];
+		s << c[1];
+		s << c[2];
+		s << nif->get<float>( m, "Base Color Scale" );
+		s << nif->get<float>( m, "Falloff Start Angle" );
+		s << nif->get<float>( m, "Falloff Stop Angle" );
+		s << nif->get<float>( m, "Falloff Start Opacity" );
+		s << nif->get<float>( m, "Falloff Stop Opacity" );
+		s << nif->get<float>( m, "Lighting Influence" );
+		s << nif->get<quint8>( m, "Env Map Min LOD" );
+		s << nif->get<float>( m, "Soft Falloff Depth" );
+		c = nif->get<Color3>( m, "Emittance Color" );
+		s << c[0];
+		s << c[1];
+		s << c[2];
+		s << nif->get<float>( m, "Adaptive Emissive Exposure Offset" );
+		s << nif->get<float>( m, "Adaptive Emissive Exposure Min" );
+		s << nif->get<float>( m, "Adaptive Emissive Exposure Max" );
+		s << quint8( bool( sf2 & 0x0080 ) );	// glow map
+		s << quint8( bool( sf2 & 0x0100 ) );	// effect PBR specular
+	}
 }

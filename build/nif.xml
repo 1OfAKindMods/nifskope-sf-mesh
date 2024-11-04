@@ -15,6 +15,7 @@
         <verexpr token="#NI_BS_LT_SSE#" string="(#BSVER# #LT# 100)">All NI + BS before SSE.</verexpr>
         <verexpr token="#NI_BS_LT_FO4#" string="(#BSVER# #LT# 130)">All NI + BS before Fallout 4.</verexpr>
         <verexpr token="#NI_BS_LTE_FO4#" string="(#BSVER# #LTE# 139)">All NI + BS until Fallout 4.</verexpr>
+        <verexpr token="#NI_BS_LT_STF#" string="(#BSVER# #LT# 170)">All NI + BS before Starfield.</verexpr>
         <verexpr token="#BS_GT_FO3#" string="(#BSVER# #GT# 34)">Skyrim, SSE, and Fallout 4</verexpr>
         <verexpr token="#BS_GTE_FO3#" string="(#BSVER# #GTE# 34)">FO3 and later.</verexpr>
         <verexpr token="#BS_GTE_SKY#" string="(#BSVER# #GTE# 83)">Skyrim and later.</verexpr>
@@ -30,7 +31,6 @@
         <verexpr token="#BS_132_139#" string="((#BSVER# #GTE# 132) #AND# (#BSVER# #LTE# 139))">Bethesda 132 to 139.</verexpr>
         <verexpr token="#BS_GTE_152#" string="(#BSVER# #GTE# 152)">Bethesda 152 and later.</verexpr>
         <verexpr token="#BS_F76#" string="(#BSVER# #EQ# 155)">Fallout 76 stream 155 only.</verexpr>
-        <verexpr token="#BS_SSE_FO4_FO76#" string="((#BSVER# #GTE# 100) #AND# (#BSVER# #LT# 170))">SSE, FO4, FO76</verexpr>
         <verexpr token="#BS_FO4_F76#" string="((#BSVER# #GTE# 130) #AND# (#BSVER# #LTE# 159))">FO4, FO76</verexpr>
         <verexpr token="#BS202#" string="((#VER# #EQ# 20.2.0.7) #AND# (#BSVER# #GT# 0))">Bethesda 20.2 only.</verexpr>
         <verexpr token="#DIVINITY2#" string="((#USER# #EQ# 0x20000) #OR# (#USER# #EQ# 0x30000))">Divinity 2</verexpr>
@@ -7117,9 +7117,9 @@
         <field name="Has Texture Arrays" type="byte" vercond="#BS_F76#" />
         <field name="Num Texture Arrays" type="uint" vercond="#BS_F76#" cond="Has Texture Arrays" />
         <field name="Texture Arrays" type="BSTextureArray" length="Num Texture Arrays" vercond="#BS_F76#" cond="Has Texture Arrays" />
-        <field name="Unk Float 1" type="float" vercond="#BS_GTE_STF#"/>
-        <field name="Unk Float 2" type="float" vercond="#BS_GTE_STF#"/>
-        <field name="Unk Short 1" type="ushort" vercond="#BS_GTE_STF#"/>
+        <field name="Unk Float 1" type="float" vercond="#BS_GTE_STF#" />
+        <field name="Unk Float 2" type="float" vercond="#BS_GTE_STF#" />
+        <field name="Unk Short 1" type="ushort" vercond="#BS_GTE_STF#" />
         <field name="Skin Tint Color" type="Color4" cond="Shader Type == 4" />
         <field name="Hair Tint Color" type="Color3" cond="Shader Type == 5" />
         <field name="Max Passes" type="float" default="4.0" range="1.0:320.0" cond="Shader Type == 7" />
@@ -7238,6 +7238,7 @@
         <field name="Terrain Threshold Falloff" type="float" cond="Shader Flags 2 #BITAND# 0x01000000" />
         <field name="Terrain Tiling Distance" type="float" cond="Shader Flags 2 #BITAND# 0x01000000" />
         <field name="Terrain Rotation Angle" type="float" cond="Shader Flags 2 #BITAND# 0x01000000" />
+        <field name="Is Modified" type="bool" />
     </struct>
 
     <niobject name="BSLightingShaderProperty" inherit="BSShaderProperty" module="BSMain" versions="#SKY_AND_LATER#">
@@ -7301,11 +7302,12 @@
         <field name="UV Scale" type="TexCoord" default="#VEC2_ONE#">Offset UV Scale to repeat tiling textures</field>
         <field name="Source Texture"  type="SizedString">points to an external texture.</field>
         <field name="Unk Float" type="float" vercond="#BS_GTE_STF#" />
+        <field name="Unk Float 2" type="float" vercond="#BS_GTE_STF#" />
         <!-- TODO: Next 4 bytes requires bitfield, read as single int -->
-        <field name="Texture Clamp Mode" type="byte" default="3">How to handle texture borders.</field>
-        <field name="Lighting Influence" type="byte" default="255" />
-        <field name="Env Map Min LOD" type="byte" range="0:16" />
-        <field name="Unused Byte" type="byte" />
+        <field name="Texture Clamp Mode" type="byte" default="3" vercond="#NI_BS_LT_STF#">How to handle texture borders.</field>
+        <field name="Lighting Influence" type="byte" default="255" vercond="#NI_BS_LT_STF#" />
+        <field name="Env Map Min LOD" type="byte" range="0:16" vercond="#NI_BS_LT_STF#" />
+        <field name="Unused Byte" type="byte" vercond="#NI_BS_LT_STF#" />
         <field name="Falloff Start Angle" type="float" default="1.0" range="#F_NRM#">At this cosine of angle falloff will be equal to Falloff Start Opacity</field>
         <field name="Falloff Stop Angle" type="float" default="1.0" range="#F_NRM#">At this cosine of angle falloff will be equal to Falloff Stop Opacity</field>
         <field name="Falloff Start Opacity" type="float" range="#F0_1#">Alpha falloff multiplier at start angle</field>
@@ -7370,6 +7372,7 @@
         <field name="Adaptive Emissive Exposure Offset" type="float" />
         <field name="Adaptive Emissive Exposure Min" type="float" />
         <field name="Adaptive Emissive Exposure Max" type="float" />
+        <field name="Is Modified" type="bool" />
     </struct>
 
     <niobject name="BSEffectShaderProperty" inherit="BSShaderProperty" module="BSMain" versions="#SKY_AND_LATER#">
@@ -9266,8 +9269,8 @@
     <niobject name="BSWeakReferenceNode" inherit="NiNode" module="BSMain" versions="#STF#">
         <field name="Num Refs" type="uint" />
         <field name="Ref" type="BSWeakReference" length="Num Refs" />
-        <field name="Num Unknown Structs" type="ushort" vercond="#BSVER# #GTE# 175" />
-        <field name="Unknown Structs" type="BSWeakRefUnknownStruct" length="Num Unknown Structs" vercond="#BSVER# #GTE# 175" />
+        <field name="Num Unknown Structs" type="ushort" default="0" vercond="#BSVER# #GTE# 175" cond="Num Refs #GT# 0" />
+        <field name="Unknown Structs" type="BSWeakRefUnknownStruct" length="Num Unknown Structs" cond="Num Unknown Structs #GT# 0" />
         <field name="Unknown Int 1" type="uint" />
         <field name="Num Water Refs" type="uint" />
         <field name="Water Refs" type="BSWaterReferenceStruct" length="Num Water Refs" />

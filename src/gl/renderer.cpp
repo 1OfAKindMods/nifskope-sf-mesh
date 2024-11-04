@@ -1258,12 +1258,13 @@ bool Renderer::setupProgramCE2( const NifModel * nif, Program * prog, Shape * me
 			textureReplModes = textureReplModes >> 2;
 			const CE2Material::UVStream *	uvStream = layer->uvStream;
 			if ( j == 0 ) {
-				if ( (scene->hasOption(Scene::DoLighting) && scene->hasVisMode(Scene::VisNormalsOnly)) || useErrorColor ) {
+				if ( (scene->hasVisMode(Scene::VisNormalsOnly) && scene->hasOption(Scene::DoLighting)) || useErrorColor ) {
 					texturePath = &emptyTexturePath;
 					textureReplacement = ( useErrorColor ? 0xFFFF00FFU : 0xFFFFFFFFU );
 					textureReplacementMode = 1;
-				} else if ( !texturePath->empty() && !textureReplacementMode && scene->hasOption(Scene::DoErrorColor) ) {
-					textureReplacement = 0xFFFF00FFU;
+				} else if ( !texturePath->empty() && !textureReplacementMode
+							&& ( scene->options & (Scene::DoTexturing | Scene::DoErrorColor) ) != Scene::DoTexturing ) {
+					textureReplacement = ( ( scene->options & Scene::DoTexturing ) ? 0xFFFF00FFU : 0xFFFFFFFFU );
 					textureReplacementMode = 1;
 				}
 			} else if ( j == 1 && !scene->hasOption(Scene::DoLighting) ) {
@@ -1690,7 +1691,7 @@ bool Renderer::setupProgramCE1( const NifModel * nif, Program * prog, Shape * me
 				prog->uniSampler( bsprop, SAMP_LIGHTING, 7, texunit, lighting, clamp );
 				prog->uni1i( HAS_MAP_SPEC, int(!bsprop->fileName( 7 ).isEmpty()) );
 				bool	glassEnabled = false;
-				if ( mat && typeid( *mat ) == typeid( EffectMaterial ) )
+				if ( mat && mat->isEffectMaterial() )
 					glassEnabled = static_cast< EffectMaterial * >( mat )->bGlassEnabled;
 				prog->uni1b( "isGlass", glassEnabled );
 			}

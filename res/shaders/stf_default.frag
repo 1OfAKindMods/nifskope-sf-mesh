@@ -546,18 +546,25 @@ void main()
 
 		if ( lm.layers[i].material.textureSet.textures[7] != 0 ) {
 			// _emissive.dds
-			// TODO: layered emissivity masks
 			vec4	tmp = vec4(0.0);
-			if ( lm.emissiveSettings.isEnabled && i == lm.emissiveSettings.emissiveSourceLayer )
+			int	maskBlender = 0;
+			if ( lm.emissiveSettings.isEnabled && i == lm.emissiveSettings.emissiveSourceLayer ) {
 				tmp = lm.emissiveSettings.emissiveTint;
-			else if ( lm.layeredEmissivity.isEnabled && i == lm.layeredEmissivity.firstLayerIndex )
+				maskBlender = lm.emissiveSettings.emissiveMaskSourceBlender;
+			} else if ( lm.layeredEmissivity.isEnabled && i == lm.layeredEmissivity.firstLayerIndex ) {
 				tmp = lm.layeredEmissivity.firstLayerTint;
-			else if ( lm.layeredEmissivity.isEnabled && i == lm.layeredEmissivity.secondLayerIndex )
+				maskBlender = lm.layeredEmissivity.firstLayerMaskIndex;
+			} else if ( lm.layeredEmissivity.isEnabled && i == lm.layeredEmissivity.secondLayerIndex ) {
 				tmp = lm.layeredEmissivity.secondLayerTint;
-			else if ( lm.layeredEmissivity.isEnabled && i == lm.layeredEmissivity.thirdLayerIndex )
+				maskBlender = lm.layeredEmissivity.secondLayerMaskIndex;
+			} else if ( lm.layeredEmissivity.isEnabled && i == lm.layeredEmissivity.thirdLayerIndex ) {
 				tmp = lm.layeredEmissivity.thirdLayerTint;
-			else
+				maskBlender = lm.layeredEmissivity.thirdLayerMaskIndex;
+			} else {
 				continue;
+			}
+			if ( maskBlender > 0 && maskBlender < numLayers )
+				tmp.a *= getBlenderMask( maskBlender - 1 );
 			emissive += getLayerTexture( i, 7, offset ).rgb * tmp.rgb * tmp.a;
 		}
 

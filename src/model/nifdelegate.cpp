@@ -121,22 +121,19 @@ public:
 							if ( i->isAbstract() && i->hasName( "Material" ) ) {
 								if ( !nif->blockInherits( i, "BSShaderProperty" ) )
 									break;
-								if ( nif->getBSVersion() >= 170 ) {
-									if ( !i->hasStrType( "BSLayeredMaterial" ) )
-										continue;
-									if ( !item->hasName( "Is Modified" ) || !nif->get<bool>( item ) ) {
-										if ( !nif->get<bool>( i, "Is Modified" ) ) {
-											if ( !item->hasName( "Is Modified" ) )
-												nif->set<bool>( i, "Is Modified", true );
-											QMessageBox::warning( nullptr, "NifSkope warning", QString( "Changes to material data are not saved automatically, use the spell 'Material/Save Edited Material...'" ) );
-										}
-										break;
-									} else {
-										if ( QMessageBox::question( nullptr, "NifSkope warning", QString( "Revert changes to material data?" ) ) == QMessageBox::Yes )
-											break;
+								const QString &	t = i->strType();
+								if ( !( t == "BSLayeredMaterial" || t.endsWith( QLatin1StringView( "MaterialDataFO76" ) ) ) )
+									continue;
+								if ( !item->hasName( "Is Modified" ) || !nif->get<bool>( item ) ) {
+									if ( !nif->get<bool>( i, "Is Modified" ) ) {
+										if ( !item->hasName( "Is Modified" ) )
+											nif->set<bool>( i, "Is Modified", true );
+										QMessageBox::warning( nullptr, "NifSkope warning", QString( "Changes to material data are not saved automatically, use the spell 'Material/Save Edited Material...'" ) );
 									}
+									break;
 								} else {
-									QMessageBox::warning( nullptr, "NifSkope warning", QString( "Abstract material data cannot be edited" ) );
+									if ( QMessageBox::question( nullptr, "NifSkope warning", QString( "Revert changes to material data?" ) ) == QMessageBox::Yes )
+										break;
 								}
 								return true;
 							}

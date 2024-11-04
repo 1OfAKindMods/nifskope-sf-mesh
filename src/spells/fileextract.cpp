@@ -210,7 +210,7 @@ QModelIndex spResourceFileExtract::cast( NifModel * nif, const QModelIndex & ind
 				writeFileWithPath( fullPath, fileData.data(), fileData.size() );
 		}
 	} catch ( std::exception & e ) {
-		QMessageBox::critical( nullptr, "NifSkope error", QString("Error extracting file: %1" ).arg( e.what() ) );
+		QMessageBox::critical( nullptr, "NifSkope error", QString( "Error extracting file: %1" ).arg( e.what() ) );
 	}
 	return index;
 }

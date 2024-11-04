@@ -545,11 +545,12 @@ void NifModel::loadFO76Material( const QModelIndex & parent, const void * materi
 	const Material &	mat = *( static_cast< const Material * >( material ) );
 	const ShaderMaterial *	bgsm = nullptr;
 	const EffectMaterial *	bgem = nullptr;
-	if ( typeid( mat ) == typeid( ShaderMaterial ) )
+	if ( mat.isShaderMaterial() )
 		bgsm = static_cast< const ShaderMaterial * >( material );
-	if ( typeid( mat ) == typeid( EffectMaterial ) )
+	if ( mat.isEffectMaterial() )
 		bgem = static_cast< const EffectMaterial * >( material );
 
+	setValue<bool>( p, "Is Modified", false );
 	setValue<quint32>( p, "Version", mat.version );
 	quint16	shaderFlags1 = quint16( mat.bTileU ) | ( quint16(mat.bTileV) << 1 );
 	shaderFlags1 |= ( quint16(bool(mat.bAlphaBlend)) << 2 ) | ( quint16(bool(mat.bAlphaTest)) << 3 );
