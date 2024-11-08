@@ -22,6 +22,8 @@ uniform vec3 glowColor;
 uniform float glowMult;
 
 uniform float alpha;
+uniform int alphaTestFunc;
+uniform float alphaThreshold;
 
 uniform vec3 tintColor;
 
@@ -61,15 +63,14 @@ mat3 btnMatrix_norm = mat3( normalize( btnMatrix[0] ), normalize( btnMatrix[1] )
 
 #define FLT_EPSILON 1.192092896e-07F // smallest such that 1.0 + FLT_EPSILON != 1.0
 
-vec3 LightingFuncGGX_REF(float NdotL, float LdotR, float NdotV, float roughness)
+vec3 LightingFuncGGX_REF(float NdotL, float NdotH, float NdotV, float roughness)
 {
 	float alpha = roughness * roughness;
 	// D (GGX normal distribution)
 	float alphaSqr = alpha * alpha;
-	// denom = NdotH * NdotH * (alphaSqr - 1.0) + 1.0,
-	// LdotR = NdotH * NdotH * 2.0 - 1.0
-	float denom = LdotR * alphaSqr + alphaSqr + (1.0 - LdotR);
-	float D = alphaSqr / (denom * denom);
+	float denom = NdotH * NdotH;
+	denom = ( denom * alphaSqr ) + max( 1.0 - denom, 0.0 );
+	float D = alphaSqr / ( denom * denom * 4.0 );
 	// no pi because BRDF -> lighting
 	// G (remapped hotness, see Unreal Shading)
 	float	k = (alpha + 2 * roughness + 1) / 8.0;
@@ -103,6 +104,18 @@ void main(void)
 	vec2 offset = gl_TexCoord[0].st * uvScale + uvOffset;
 
 	vec4	baseMap = texture2D(BaseMap, offset);
+
+	vec4 color = baseMap;
+	color.a = C.a * baseMap.a * alpha;
+	if ( alphaTestFunc > 0 ) {
+		if ( color.a < alphaThreshold && alphaTestFunc != 1 && alphaTestFunc != 3 && alphaTestFunc != 5 )
+			discard;
+		if ( color.a == alphaThreshold && alphaTestFunc != 2 && alphaTestFunc != 3 && alphaTestFunc != 6 )
+			discard;
+		if ( color.a > alphaThreshold && ( alphaTestFunc < 4 || alphaTestFunc > 6 ) )
+			discard;
+	}
+
 	vec4	normalMap = texture2D(NormalMap, offset);
 	vec4	lightingMap = vec4(0.25, 1.0, 0.0, 1.0);
 	if ( hasSpecularMap )
@@ -120,17 +133,17 @@ void main(void)
 	vec3 L = normalize(LightDir);
 	vec3 V = ViewDir_norm;
 	vec3 R = reflect(-V, normal);
+	vec3 H = normalize(L + V);
 
 	float NdotL = dot(normal, L);
 	float NdotL0 = max(NdotL, 0.0);
-	float LdotR = dot(L, R);
+	float NdotH = max(dot(normal, H), 0.0);
 	float NdotV = abs(dot(normal, V));
-	float LdotV = dot(L, V);
+	float LdotH = dot(L, H);
 
 	vec3	reflectedWS = vec3(reflMatrix * (gl_ModelViewMatrixInverse * vec4(R, 0.0))) * vec3(1.0, 1.0, -1.0);
 	vec3	normalWS = vec3(reflMatrix * (gl_ModelViewMatrixInverse * vec4(normal, 0.0))) * vec3(1.0, 1.0, -1.0);
 
-	vec4 color;
 	vec3 albedo = baseMap.rgb * C.rgb;
 	if ( greyscaleColor ) {
 		// work around incorrect format used by Fallout 76 grayscale textures
@@ -153,11 +166,10 @@ void main(void)
 
 	// Specular
 	float	roughness = 1.0 - lightingMap.r;
-	vec3	spec = LightingFuncGGX_REF(NdotL0, LdotR, NdotV, max(roughness, 0.02)) * D.rgb;
+	vec3	spec = LightingFuncGGX_REF(NdotL0, NdotH, NdotV, max(roughness, 0.02)) * D.rgb;
 
 	// Diffuse
 	vec3	diffuse = vec3(NdotL0);
-	float	LdotH = sqrt(max(LdotV * 0.5 + 0.5, 0.0));
 	// Fresnel
 	vec2	fDirect = texture2DLod(EnvironmentMap, vec2(LdotH, NdotL0), 0.0).ba;
 	spec *= mix(f0, vec3(1.0), fDirect.x);
@@ -217,8 +229,6 @@ void main(void)
 	color.rgb += emissive;
 
 	color.rgb = tonemap(color.rgb * D.a, A.a);
-	color.a = C.a * baseMap.a;
 
 	gl_FragColor = color;
-	gl_FragColor.a *= alpha;
 }

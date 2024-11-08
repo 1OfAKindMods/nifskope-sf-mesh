@@ -17,6 +17,9 @@ uniform bool hasWeaponBlood;
 uniform vec4 glowColor;
 uniform float glowMult;
 
+uniform int alphaTestFunc;
+uniform float alphaThreshold;
+
 uniform vec2 uvScale;
 uniform vec2 uvOffset;
 
@@ -89,6 +92,15 @@ void main( void )
 		vec4 luA = colorLookup( baseMap.a, C.a * falloff * alphaMult );
 
 		color.a = luA.a;
+	}
+
+	if ( alphaTestFunc > 0 ) {
+		if ( color.a < alphaThreshold && alphaTestFunc != 1 && alphaTestFunc != 3 && alphaTestFunc != 5 )
+			discard;
+		if ( color.a == alphaThreshold && alphaTestFunc != 2 && alphaTestFunc != 3 && alphaTestFunc != 6 )
+			discard;
+		if ( color.a > alphaThreshold && ( alphaTestFunc < 4 || alphaTestFunc > 6 ) )
+			discard;
 	}
 
 	gl_FragColor.rgb = color.rgb * glowMult;

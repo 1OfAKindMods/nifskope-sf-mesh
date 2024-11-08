@@ -8,18 +8,21 @@ varying vec4 D;
 
 varying mat4 reflMatrix;
 
+uniform bool	invertZAxis;
+
 mat4 rotateEnv( mat4 m, float rz )
 {
 	float	rz_c = cos(rz);
 	float	rz_s = -sin(rz);
+	float	z = ( !invertZAxis ? 1.0 : -1.0 );
 	return mat4(vec4(m[0][0] * rz_c - m[0][1] * rz_s,
-					 m[0][0] * rz_s + m[0][1] * rz_c, m[0][2], m[0][3]),
+					 m[0][0] * rz_s + m[0][1] * rz_c, m[0][2] * z, m[0][3]),
 				vec4(m[1][0] * rz_c - m[1][1] * rz_s,
-					 m[1][0] * rz_s + m[1][1] * rz_c, m[1][2], m[1][3]),
+					 m[1][0] * rz_s + m[1][1] * rz_c, m[1][2] * z, m[1][3]),
 				vec4(m[2][0] * rz_c - m[2][1] * rz_s,
-					 m[2][0] * rz_s + m[2][1] * rz_c, m[2][2], m[2][3]),
+					 m[2][0] * rz_s + m[2][1] * rz_c, m[2][2] * z, m[2][3]),
 				vec4(m[3][0] * rz_c - m[3][1] * rz_s,
-					 m[3][0] * rz_s + m[3][1] * rz_c, m[3][2], m[3][3]));
+					 m[3][0] * rz_s + m[3][1] * rz_c, m[3][2] * z, m[3][3]));
 }
 
 void main( void )

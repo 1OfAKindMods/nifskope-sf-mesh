@@ -9371,6 +9371,14 @@
 
     <niobject name="CsNiNode" inherit="NiNode" />
 
+    <niobject name="BSFaceFX" module="BSMain" versions="#STF#">
+        <field name="Name" type="string" />
+    </niobject>
+
+    <niobject name="BoneModifierExtra" module="BSMain" versions="#STF#">
+        <field name="Name" type="string" />
+    </niobject>
+
     <!-- QQSpeed -->
 
     <niobject name="NiYAMaterialProperty" inherit="NiProperty" module="NiMain" versions="V20_2_4_7">

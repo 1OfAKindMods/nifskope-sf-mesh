@@ -222,19 +222,17 @@ void AlphaProperty::updateImpl( const NifModel * nif, const QModelIndex & index 
 		alphaSrc = blendMap[ ( flags >> 1 ) & 0x0f ];
 		alphaDst = blendMap[ ( flags >> 5 ) & 0x0f ];
 
-		static const GLenum testMap[8] = {
-			GL_ALWAYS, GL_LESS, GL_EQUAL, GL_LEQUAL, GL_GREATER, GL_NOTEQUAL, GL_GEQUAL, GL_NEVER
-		};
-
-		alphaTest = flags & ( 1 << 9 );
-		alphaFunc = testMap[ ( flags >> 10 ) & 0x7 ];
 		alphaThreshold = float( nif->get<int>( iBlock, "Threshold" ) ) / 255.0;
 
 		alphaSort = ( flags & 0x2000 ) == 0;
 
+		alphaTest = flags & ( 1 << 9 );
 		// Temporary Weapon Blood fix for FO4
 		if ( nif->getBSVersion() >= 130 )
 			alphaTest |= (flags == 20547);
+
+		int i = ( flags >> 10 ) & 0x7;
+		alphaFunc = std::int8_t( alphaTest ? i : -1 );
 	}
 }
 
@@ -256,12 +254,36 @@ void glProperty( AlphaProperty * p )
 		glDisable( GL_BLEND );
 	}
 
-	if ( p && p->alphaTest && p->scene->hasOption(Scene::DoBlending) ) {
+	static const GLenum testMap[8] = {
+		GL_ALWAYS, GL_LESS, GL_EQUAL, GL_LEQUAL, GL_GREATER, GL_NOTEQUAL, GL_GEQUAL, GL_NEVER
+	};
+
+	int	alphaTestFunc;
+	if ( p && ( alphaTestFunc = p->alphaFunc ) > 0 && p->scene->hasOption(Scene::DoBlending) ) {
 		glEnable( GL_ALPHA_TEST );
-		glAlphaFunc( p->alphaFunc, p->alphaThreshold );
+		glAlphaFunc( testMap[alphaTestFunc], p->alphaThreshold );
 	} else {
 		glDisable( GL_ALPHA_TEST );
 	}
+}
+
+int AlphaProperty::glProperty( float & alphaTestThreshold, const AlphaProperty * p )
+{
+	if ( p && p->alphaBlend && p->scene->hasOption(Scene::DoBlending) ) {
+		glEnable( GL_BLEND );
+		glBlendFunc( p->alphaSrc, p->alphaDst );
+	} else {
+		glDisable( GL_BLEND );
+	}
+
+	glDisable( GL_ALPHA_TEST );
+	int	alphaTestFunc = -1;
+	if ( p && p->alphaTest && p->scene->hasOption(Scene::DoBlending) ) {
+		alphaTestFunc = p->alphaFunc;
+		alphaTestThreshold = p->alphaThreshold;
+	}
+
+	return alphaTestFunc;
 }
 
 void ZBufferProperty::updateImpl( const NifModel * nif, const QModelIndex & index )

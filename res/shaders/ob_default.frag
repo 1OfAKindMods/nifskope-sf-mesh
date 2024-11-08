@@ -25,6 +25,9 @@ uniform float parallaxScale;
 uniform float glowMult;
 uniform vec4 glowColor;
 
+uniform int alphaTestFunc;
+uniform float alphaThreshold;
+
 uniform vec2 uvCenter;
 uniform vec2 uvScale;
 uniform vec2 uvOffset;
@@ -194,6 +197,15 @@ void main( void )
 				color.rgb += spec.rgb * normalMap.a;
 			}
 		}
+	}
+
+	if ( alphaTestFunc > 0 ) {
+		if ( color.a < alphaThreshold && alphaTestFunc != 1 && alphaTestFunc != 3 && alphaTestFunc != 5 )
+			discard;
+		if ( color.a == alphaThreshold && alphaTestFunc != 2 && alphaTestFunc != 3 && alphaTestFunc != 6 )
+			discard;
+		if ( color.a > alphaThreshold && ( alphaTestFunc < 4 || alphaTestFunc > 6 ) )
+			discard;
 	}
 
 	gl_FragColor = vec4( tonemap( color.rgb ), color.a );

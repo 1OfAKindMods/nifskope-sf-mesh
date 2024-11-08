@@ -179,13 +179,16 @@ public:
 	GLfloat alphaThreshold = 0;
 
 	friend void glProperty( AlphaProperty * );
+	// returns test function (-1: disabled, 0: always, 1: <, 2: ==, 3: <=, 4: >, 5: !=, 6: >=, 7: never)
+	static int glProperty( float & alphaTestThreshold, const AlphaProperty * p );
 
 protected:
 	void setController( const NifModel * nif, const QModelIndex & controller ) override final;
 	void updateImpl( const NifModel * nif, const QModelIndex & block ) override final;
 
 	bool alphaBlend = false, alphaTest = false, alphaSort = false;
-	GLenum alphaSrc = 0, alphaDst = 0, alphaFunc = 0;
+	std::int8_t alphaFunc = -1;
+	GLenum alphaSrc = 0, alphaDst = 0;
 };
 
 REGISTER_PROPERTY( AlphaProperty, Alpha )

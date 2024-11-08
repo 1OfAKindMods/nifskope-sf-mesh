@@ -253,18 +253,17 @@ float emissiveIntensity( bool useAdaptive, bool adaptiveLimits, vec4 luminancePa
 	return sqrt( l * 0.01 );
 }
 
-float LightingFuncGGX_REF( float LdotR, float NdotL, float NdotV, float roughness )
+float LightingFuncGGX_REF( float NdotH, float NdotL, float NdotV, float roughness )
 {
 	float alpha = roughness * roughness;
 	// D (GGX normal distribution)
 	float alphaSqr = alpha * alpha;
-	// denom = NdotH * NdotH * (alphaSqr - 1.0) + 1.0,
-	// LdotR = NdotH * NdotH * 2.0 - 1.0
-	float denom = LdotR * alphaSqr + alphaSqr + (1.0 - LdotR);
-	float D = alphaSqr / (denom * denom);
+	float denom = NdotH * NdotH;
+	denom = ( denom * alphaSqr ) + max( 1.0 - denom, 0.0 );
+	float D = alphaSqr / ( denom * denom * 4.0 );
 	// no pi because BRDF -> lighting
-	// G (remapped hotness, see Unreal Shading)
-	float	k = ( alpha + 2.0 * roughness + 1.0 ) / 8.0;
+	// G
+	float	k = alpha * 0.5;
 	float	G = NdotL / ( mix(NdotL, 1.0, k) * mix(NdotV, 1.0, k) );
 
 	return D * G;
@@ -606,19 +605,20 @@ void main()
 			color.a = alpha;
 	}
 
-	normal = normalize( btnMatrix_norm * normal );
 	if ( !gl_FrontFacing )
-		normal *= -1.0;
+		normal.z *= -1.0;
+	normal = normalize( btnMatrix_norm * normal );
 
 	vec3	L = normalize(LightDir);
 	vec3	V = ViewDir_norm;
 	vec3	R = reflect(-V, normal);
+	vec3	H = normalize(L + V);
 
 	float	NdotL = dot(normal, L);
 	float	NdotL0 = max(NdotL, 0.0);
-	float	LdotR = dot(L, R);
+	float	NdotH = max(dot(normal, H), 0.0);
 	float	NdotV = abs(dot(normal, V));
-	float	LdotV = dot(L, V);
+	float	LdotH = dot(L, H);
 
 	vec3	reflectedWS = vec3(reflMatrix * (gl_ModelViewMatrixInverse * vec4(R, 0.0)));
 	vec3	normalWS = vec3(reflMatrix * (gl_ModelViewMatrixInverse * vec4(normal, 0.0)));
@@ -628,12 +628,11 @@ void main()
 
 	// Specular
 	float	roughness = pbrMap.r;
-	vec3	spec = D.rgb * LightingFuncGGX_REF( LdotR, NdotL0, NdotV, max(roughness, 0.02) );
+	vec3	spec = D.rgb * LightingFuncGGX_REF( NdotH, NdotL0, NdotV, max(roughness, 0.02) );
 
 	// Diffuse
 	vec3	diffuse = vec3(NdotL0);
 	// Fresnel
-	float	LdotH = sqrt( max(LdotV * 0.5 + 0.5, 0.0) );
 	vec2	fDirect = textureLod(textureUnits[0], vec2(LdotH, NdotL0), 0.0).ba;
 	spec *= mix(f0, vec3(1.0), fDirect.x);
 	vec4	envLUT = textureLod(textureUnits[0], vec2(NdotV, roughness), 0.0);
@@ -664,7 +663,7 @@ void main()
 		ambient *= (vec3(1.0) - f0) * fDiffEnv;
 	}
 	float	ao = pbrMap.b;
-	float	specOcc = max( ( ao - 1.0 ) / ( NdotV * 0.5 + 0.5 ) + 1.0, 0.0 );
+	float	specOcc = max( ( ao - 1.0 ) * ( ( NdotV * 1.125 - 2.625 ) * NdotV + 2.5 ) + 1.0, 0.0 );
 	refl *= f * envLUT.g;
 
 	// Diffuse

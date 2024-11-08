@@ -1,6 +1,8 @@
  == CHANGELOG ==
 
 * Implemented support for editing and saving Fallout 76 materials.
+* Starfield and Fallout 76 shading fixes.
+* Fixed error on BSFaceFX and BoneModifierExtra blocks.
 
 #### NifSkope-2.0.dev9-20241028
 

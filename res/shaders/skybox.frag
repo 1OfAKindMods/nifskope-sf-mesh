@@ -3,7 +3,6 @@
 
 uniform samplerCube	CubeMap;
 uniform bool	hasCubeMap;
-uniform bool	invertZAxis;
 uniform int	skyCubeMipLevel;
 
 varying vec3 LightDir;
@@ -21,7 +20,7 @@ float LightingFuncGGX_REF( float LdotR, float roughness )
 	float alphaSqr = alpha * alpha;
 	// denom = NdotH * NdotH * (alphaSqr - 1.0) + 1.0,
 	// LdotR = NdotH * NdotH * 2.0 - 1.0
-	float denom = LdotR * alphaSqr + alphaSqr + (1.0 - LdotR);
+	float denom = LdotR * alphaSqr + alphaSqr + max(1.0 - LdotR, 0.0);
 	// no pi because BRDF -> lighting
 	return alphaSqr / (denom * denom);
 }
@@ -49,8 +48,6 @@ void main()
 	float	VdotL0 = max( VdotL, 0.0 );
 
 	vec3	viewWS = vec3( reflMatrix * (gl_ModelViewMatrixInverse * vec4(V, 0.0)) );
-	if ( invertZAxis )
-		viewWS.z *= -1.0;
 
 	float	m = clamp( float(skyCubeMipLevel), 0.0, 6.0 );
 	float	roughness = ( 5.0 - sqrt( 25.0 - 4.0 * m ) ) / 4.0;

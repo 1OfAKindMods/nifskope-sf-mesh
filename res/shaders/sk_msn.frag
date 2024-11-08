@@ -16,6 +16,8 @@ uniform vec3 glowColor;
 uniform float glowMult;
 
 uniform float alpha;
+uniform int alphaTestFunc;
+uniform float alphaThreshold;
 
 uniform vec3 tintColor;
 
@@ -87,6 +89,18 @@ void main( void )
 	vec2 offset = gl_TexCoord[0].st * uvScale + uvOffset;
 
 	vec4 baseMap = texture2D( BaseMap, offset );
+
+	vec4 color = baseMap;
+	color.a = C.a * baseMap.a * alpha;
+	if ( alphaTestFunc > 0 ) {
+		if ( color.a < alphaThreshold && alphaTestFunc != 1 && alphaTestFunc != 3 && alphaTestFunc != 5 )
+			discard;
+		if ( color.a == alphaThreshold && alphaTestFunc != 2 && alphaTestFunc != 3 && alphaTestFunc != 6 )
+			discard;
+		if ( color.a > alphaThreshold && ( alphaTestFunc < 4 || alphaTestFunc > 6 ) )
+			discard;
+	}
+
 	vec4 normalMap = texture2D( NormalMap, offset );
 
 	vec3 normal = normalMap.rgb * 2.0 - 1.0;
@@ -112,7 +126,6 @@ void main( void )
 	float NdotNegL = max( dot(normal, -L), 0.0 );
 
 
-	vec4 color;
 	vec3 albedo = baseMap.rgb * C.rgb;
 	vec3 diffuse = A.rgb + (D.rgb * NdotL);
 
@@ -189,8 +202,6 @@ void main( void )
 
 	color.rgb = albedo * (diffuse + emissive) + spec;
 	color.rgb = tonemap( color.rgb * D.a, A.a );
-	color.a = C.a * baseMap.a;
 
 	gl_FragColor = color;
-	gl_FragColor.a *= alpha;
 }

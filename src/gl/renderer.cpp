@@ -351,8 +351,9 @@ bool Renderer::Shader::load( const QString & filepath )
 Renderer::Program::Program( const QString & n, QOpenGLFunctions * fn )
 	: f( fn ), name( n.toLower() ), id( 0 )
 {
-	uniLocationsMap = new UniformLocationMapItem[512];
-	uniLocationsMapMask = 511;
+	unsigned int	m = ( name.startsWith( QLatin1StringView("stf_") ) ? 512 : 128 );
+	uniLocationsMap = new UniformLocationMapItem[m];
+	uniLocationsMapMask = m - 1;
 	uniLocationsMapSize = 0;
 	id = f->glCreateProgram();
 }
@@ -563,7 +564,7 @@ void Renderer::updateShaders()
 		Program * program = new Program( name, fn );
 		program->load( dir.filePath( name ), this );
 		program->setUniformLocations();
-		programs.insert( name, program );
+		programs.insert( program->name, program );
 	}
 }
 
@@ -1760,6 +1761,9 @@ bool Renderer::setupProgramCE1( const NifModel * nif, Program * prog, Shape * me
 
 	// setup blending
 
+	glDisable( GL_ALPHA_TEST );
+	int	alphaTestFunc = -1;
+	float	alphaThreshold = 0.0f;
 	if ( mat ) {
 		static const GLenum blendMap[11] = {
 			GL_ONE, GL_ZERO, GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR,
@@ -1775,10 +1779,8 @@ bool Renderer::setupProgramCE1( const NifModel * nif, Program * prog, Shape * me
 		}
 
 		if ( mat->hasAlphaTest() && scene->hasOption(Scene::DoBlending) ) {
-			glEnable( GL_ALPHA_TEST );
-			glAlphaFunc( GL_GREATER, float( mat->iAlphaTestRef ) / 255.0 );
-		} else {
-			glDisable( GL_ALPHA_TEST );
+			alphaTestFunc = 4;	// greater
+			alphaThreshold = float( mat->iAlphaTestRef ) / 255.0f;
 		}
 
 		if ( mat->bDecal ) {
@@ -1787,15 +1789,18 @@ bool Renderer::setupProgramCE1( const NifModel * nif, Program * prog, Shape * me
 		}
 
 	} else {
-		glProperty( mesh->alphaProperty );
+		alphaTestFunc = AlphaProperty::glProperty( alphaThreshold, mesh->alphaProperty );
 		// BSESP/BSLSP do not always need an NiAlphaProperty, and appear to override it at times
 		if ( mesh->translucent ) {
 			glEnable( GL_BLEND );
 			glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 			// If mesh is alpha tested, override threshold
-			glAlphaFunc( GL_GREATER, 0.1f );
+			alphaTestFunc = ( alphaTestFunc < 0 ? alphaTestFunc : 4 );
+			alphaThreshold = 0.1f;
 		}
 	}
+	prog->uni1i( "alphaTestFunc", alphaTestFunc );
+	prog->uni1f( "alphaThreshold", alphaThreshold );
 
 	glDisable( GL_COLOR_MATERIAL );
 
@@ -2083,7 +2088,9 @@ bool Renderer::setupProgramFO3( const NifModel * nif, Program * prog, Shape * me
 
 	// setup blending
 
-	glProperty( mesh->alphaProperty );
+	float	alphaThreshold = 0.0f;
+	prog->uni1i( "alphaTestFunc", AlphaProperty::glProperty( alphaThreshold, mesh->alphaProperty ) );
+	prog->uni1f( "alphaThreshold", alphaThreshold );
 
 	if ( isDecal ) {
 		glEnable( GL_POLYGON_OFFSET_FILL );
