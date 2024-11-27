@@ -46,8 +46,6 @@ uniform float backlightPower;
 
 uniform float envReflection;
 
-uniform mat4 worldMatrix;
-
 varying vec3 LightDir;
 varying vec3 ViewDir;
 
@@ -56,6 +54,7 @@ varying vec4 C;
 varying vec4 D;
 
 varying mat3 btnMatrix;
+varying mat3 reflMatrix;
 
 vec3 ViewDir_norm = normalize( ViewDir );
 mat3 btnMatrix_norm = mat3( normalize( btnMatrix[0] ), normalize( btnMatrix[1] ), normalize( btnMatrix[2] ) );
@@ -236,7 +235,7 @@ void main( void )
 
 	vec3 L = normalize(LightDir);
 	vec3 V = ViewDir_norm;
-	vec3 R = reflect(-L, normal);
+	vec3 R = reflect(-V, normal);
 	vec3 H = normalize( L + V );
 
 	float NdotL = dot(normal, L);
@@ -246,7 +245,7 @@ void main( void )
 	float VdotH = max( dot(V, H), FLT_EPSILON );
 	float NdotNegL = max( dot(normal, -L), FLT_EPSILON );
 
-	vec3 reflectedWS = vec3( worldMatrix * (gl_ModelViewMatrixInverse * vec4( reflect( V, normal ), 0.0 )) );
+	vec3 reflectedWS = reflMatrix * R;
 
 	vec3 albedo = baseMap.rgb * C.rgb;
 	vec3 diffuse = A.rgb + D.rgb * NdotL0;

@@ -194,7 +194,7 @@ void GameManager::GameResources::init_archives()
 	for ( const auto & i : tmp ) {
 		try {
 			ba2File->loadArchivePath( i.toStdString().c_str(), archiveFilterFuncTable[game] );
-		} catch ( FO76UtilsError & e ) {
+		} catch ( NifSkopeError & e ) {
 			QMessageBox::critical( nullptr, "NifSkope error", QString("Error opening resource path '%1': %2").arg(i).arg(e.what()) );
 		}
 	}
@@ -235,7 +235,7 @@ CE2MaterialDB * GameManager::GameResources::init_materials()
 		sfMaterials->copyFrom( *(parent->sfMaterials) );
 	try {
 		sfMaterials->loadArchives( *ba2File );
-	} catch ( FO76UtilsError & e ) {
+	} catch ( NifSkopeError & e ) {
 		QMessageBox::critical( nullptr, "NifSkope error", QString("Error loading Starfield material database: %1").arg(e.what()) );
 	}
 
@@ -300,7 +300,7 @@ bool GameManager::GameResources::get_file( QByteArray & data, const std::string_
 	}
 	try {
 		ba2File->extractFile( &data, &byteArrayAllocFunc, *fd );
-	} catch ( FO76UtilsError & e ) {
+	} catch ( NifSkopeError & e ) {
 		if ( std::string_view(e.what()).starts_with( "BA2File: unexpected change to size of loose file" ) ) {
 			close_archives();
 			return get_file( data, fullPath );

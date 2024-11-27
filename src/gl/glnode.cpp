@@ -814,6 +814,12 @@ void drawHvkShape( const NifModel * nif, const QModelIndex & iShape, QStack<QMod
 		}
 
 		drawCapsule( nif->get<Vector3>( iShape, "First Point" ), nif->get<Vector3>( iShape, "Second Point" ), nif->get<float>( iShape, "Radius" ) );
+	} else if ( name == "bhkCylinderShape" ) {
+		if ( Node::SELECTING ) {
+			setColorKeyFromID( nif->getBlockNumber( iShape ) );
+		}
+
+		drawCylinder( Vector3( nif->get<Vector4>( iShape, "Vertex A" ) ), Vector3( nif->get<Vector4>( iShape, "Vertex B" ) ), nif->get<float>( iShape, "Cylinder Radius" ) );
 	} else if ( name == "bhkNiTriStripsShape" ) {
 		glPushMatrix();
 		float s = bhkInvScale( nif );

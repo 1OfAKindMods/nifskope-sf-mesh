@@ -96,15 +96,18 @@ class spStrippify final : public Spell
 			copyValue<int>( nif, iStripData, iData, "Has Normals" );
 			copyArray<Vector3>( nif, iStripData, iData, "Normals" );
 
-			copyValue<int>( nif, iStripData, iData, "Data Flags" );
-			copyValue<int>( nif, iStripData, iData, "BS Data Flags" );
+			if ( nif->getVersionNumber() <= 0x04000002 )
+				copyValue<int>( nif, iStripData, iData, "Has UV" );
+			if ( !( nif->getVersionNumber() == 0x14020007 && nif->getBSVersion() > 0 ) )
+				copyValue<int>( nif, iStripData, iData, "Data Flags" );
+			else
+				copyValue<int>( nif, iStripData, iData, "BS Data Flags" );
 			copyArray<Vector3>( nif, iStripData, iData, "Bitangents" );
 			copyArray<Vector3>( nif, iStripData, iData, "Tangents" );
 
 			copyValue<int>( nif, iStripData, iData, "Has Vertex Colors" );
 			copyArray<Color4>( nif, iStripData, iData, "Vertex Colors" );
 
-			copyValue<int>( nif, iStripData, iData, "Has UV" );
 			QModelIndex iDstUV = nif->getIndex( iStripData, "UV Sets" );
 			QModelIndex iSrcUV = nif->getIndex( iData, "UV Sets" );
 
@@ -282,16 +285,22 @@ class spTriangulate final : public Spell
 			copyValue<int>( nif, iTriData, iStripData, "Has Normals" );
 			copyArray<Vector3>( nif, iTriData, iStripData, "Normals" );
 
+#if 0
 			copyValue<int>( nif, iTriData, iStripData, "TSpace Flag" );
-			copyArray<Vector3>( nif, iTriData, iStripData, "Bitangents" );
-			copyArray<Vector3>( nif, iTriData, iStripData, "Tangents" );
+#endif
 
 			copyValue<int>( nif, iTriData, iStripData, "Has Vertex Colors" );
 			copyArray<Color4>( nif, iTriData, iStripData, "Vertex Colors" );
 
-			copyValue<int>( nif, iTriData, iStripData, "Has UV" );
-			copyValue<int>( nif, iTriData, iStripData, "Data Flags" );
-			copyValue<int>( nif, iTriData, iStripData, "BS Data Flags" );
+			if ( nif->getVersionNumber() <= 0x04000002 )
+				copyValue<int>( nif, iTriData, iStripData, "Has UV" );
+			if ( !( nif->getVersionNumber() == 0x14020007 && nif->getBSVersion() > 0 ) )
+				copyValue<int>( nif, iTriData, iStripData, "Data Flags" );
+			else
+				copyValue<int>( nif, iTriData, iStripData, "BS Data Flags" );
+			copyArray<Vector3>( nif, iTriData, iStripData, "Bitangents" );
+			copyArray<Vector3>( nif, iTriData, iStripData, "Tangents" );
+
 			QModelIndex iDstUV = nif->getIndex( iTriData, "UV Sets" );
 			QModelIndex iSrcUV = nif->getIndex( iStripData, "UV Sets" );
 

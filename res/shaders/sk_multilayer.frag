@@ -37,8 +37,6 @@ uniform float innerThickness;
 uniform float outerRefraction;
 uniform float outerReflection;
 
-uniform mat4 worldMatrix;
-
 varying vec3 LightDir;
 varying vec3 ViewDir;
 
@@ -47,6 +45,7 @@ varying vec4 C;
 varying vec4 D;
 
 varying mat3 tbnMatrix;
+varying mat3 reflMatrix;
 
 
 vec3 tonemap(vec3 x, float y)
@@ -145,7 +144,7 @@ void main( void )
 	vec4 innerMap = texture2D( InnerMap, parallax.xy * innerScale );
 
 	vec3 reflected = reflect( -E, normal );
-	vec3 reflectedWS = vec3( worldMatrix * (gl_ModelViewMatrixInverse * vec4( reflected, 0.0 )) );
+	vec3 reflectedWS = reflMatrix * reflected;
 
 
 	vec3 albedo;

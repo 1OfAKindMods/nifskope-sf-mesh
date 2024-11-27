@@ -16,6 +16,8 @@
 #include <QPushButton>
 #include <QSettings>
 
+#include "mesh.h"
+
 /* XPM */
 static char const * transform_xpm[] = {
 	"64 64 6 1",
@@ -93,10 +95,93 @@ static char const * transform_xpm[] = {
 
 bool spApplyTransformation::isApplicable( const NifModel * nif, const QModelIndex & index )
 {
-	return nif->itemStrType( index ) == "NiBlock" &&
-		( nif->inherits( nif->itemName( index ), "NiNode" )
-	      || nif->inherits( nif->itemName( index ), "NiTriBasedGeom" )
-		  || nif->inherits( nif->itemName( index ), "BSTriShape" ));
+	const NifItem *	item = nif->getItem( index );
+	if ( !( item && item->hasStrType( "NiBlock" ) ) )
+		return false;
+	const QString &	itemName = item->name();
+	return ( nif->inherits( itemName, "NiNode" ) || nif->inherits( itemName, "NiTriBasedGeom" )
+			|| nif->inherits( itemName, "BSTriShape" ) || nif->inherits( itemName, "BSGeometry" ) );
+}
+
+void spApplyTransformation::cast_Starfield( NifModel * nif, const QModelIndex & index )
+{
+	NifItem *	item = nif->getItem( index );
+	if ( !item )
+		return;
+	if ( !item->hasStrType( "BSMeshData" ) ) {
+		if ( item->hasStrType( "BSMesh" ) ) {
+			cast_Starfield( nif, nif->getIndex( item, "Mesh Data" ) );
+		} else if ( item->hasStrType( "BSMeshArray" ) && nif->get<bool>( item, "Has Mesh" ) ) {
+			cast_Starfield( nif, nif->getIndex( item, "Mesh" ) );
+		} else if ( item->hasName( "BSGeometry" ) && ( nif->get<quint32>( item, "Flags" ) & 0x0200 ) ) {
+			QModelIndex	iMeshes = nif->getIndex( item, "Meshes" );
+			if ( iMeshes.isValid() && nif->isArray( iMeshes ) ) {
+				int	n = nif->rowCount( iMeshes );
+				for ( int i = 0; i < n; i++ )
+					cast_Starfield( nif, nif->getIndex( iMeshes, i ) );
+				Transform	t;
+				t.writeBack( nif, index );
+			}
+		}
+		return;
+	}
+
+	QModelIndex	iBlock = nif->getBlockIndex( item );
+	Transform	t( nif, iBlock );
+
+	QModelIndex	iVertices = nif->getIndex( index, "Vertices" );
+	if ( iVertices.isValid() && nif->rowCount( iVertices ) > 0 ) {
+		FloatVector4	maxBounds( 0.0f );
+		t.scale *= nif->get<float>( index, "Scale" );
+		QVector< ShortVector3 >	verts = nif->getArray<ShortVector3>( iVertices );
+		qsizetype	n = verts.size();
+		for ( qsizetype i = 0; i < n; i++ ) {
+			Vector3 &	v = *( static_cast< Vector3 * >( &(verts[i]) ) );
+			v = t * v;
+			maxBounds.maxValues( FloatVector4(v).absValues() );
+		}
+		float	maxPos = std::max( maxBounds[0], std::max( maxBounds[1], maxBounds[2] ) );
+		float	scale = 1.0f / 64.0f;
+		while ( maxPos > scale && scale < 16777216.0f )
+			scale = scale + scale;
+		nif->set<float>( index, "Scale", scale );
+		float	invScale = 1.0f / scale;
+		for ( qsizetype i = 0; i < n; i++ ) {
+			Vector3 &	v = *( static_cast< Vector3 * >( &(verts[i]) ) );
+			v *= invScale;
+		}
+		nif->setArray<ShortVector3>( iVertices, verts );
+	}
+
+	QModelIndex	iNormals = nif->getIndex( index, "Normals" );
+	if ( iNormals.isValid() && nif->rowCount( iNormals ) > 0 ) {
+		QVector< UDecVector4 >	normals = nif->getArray<UDecVector4>( iNormals );
+		qsizetype	n = normals.size();
+		for ( qsizetype i = 0; i < n; i++ ) {
+			UDecVector4 &	v = normals[i];
+			Vector3	tmp( v[0], v[1], v[2] );
+			tmp = t.rotation * tmp;
+			v[0] = tmp[0];
+			v[1] = tmp[1];
+			v[2] = tmp[2];
+		}
+		nif->setArray<UDecVector4>( iNormals, normals );
+	}
+
+	QModelIndex	iTangents = nif->getIndex( index, "Tangents" );
+	if ( iTangents.isValid() && nif->rowCount( iTangents ) > 0 ) {
+		QVector< UDecVector4 >	tangents = nif->getArray<UDecVector4>( iTangents );
+		qsizetype	n = tangents.size();
+		for ( qsizetype i = 0; i < n; i++ ) {
+			UDecVector4 &	v = tangents[i];
+			Vector3	tmp( v[0], v[1], v[2] );
+			tmp = t.rotation * tmp;
+			v[0] = tmp[0];
+			v[1] = tmp[1];
+			v[2] = tmp[2];
+		}
+		nif->setArray<UDecVector4>( iTangents, tangents );
+	}
 }
 
 QModelIndex spApplyTransformation::cast( NifModel * nif, const QModelIndex & index )
@@ -109,8 +194,6 @@ QModelIndex spApplyTransformation::cast( NifModel * nif, const QModelIndex & ind
 		{
 			return index;
 		}
-
-
 
 
 	if ( nif->inherits( nif->itemName( index ), "NiNode" ) ) {
@@ -225,6 +308,11 @@ QModelIndex spApplyTransformation::cast( NifModel * nif, const QModelIndex & ind
 
 		t = Transform();
 		t.writeBack( nif, index );
+	} else if ( nif->inherits( nif->itemName( index ), "BSGeometry" ) && nif->checkInternalGeometry( index ) ) {
+		nif->setState( BaseModel::Processing );
+		cast_Starfield( nif, index );
+		nif->restoreState();
+		spUpdateBounds::cast_Starfield( nif, index );
 	}
 
 	return index;
@@ -542,9 +630,8 @@ void spScaleVertices::cast_Starfield(
 		for ( Vector3 & v : verts ) {
 			FloatVector4	xyz( v );
 			xyz *= scaleVector * scale;
-			xyzMax.maxValues( xyz );
-			xyzMax.maxValues( xyz * -1.0f );
 			v.fromFloatVector4( xyz );
+			xyzMax.maxValues( xyz.absValues() );
 		}
 		xyzMax[0] = std::max( xyzMax[0], std::max( xyzMax[1], xyzMax[2] ) );
 		// normalize vertex coordinates

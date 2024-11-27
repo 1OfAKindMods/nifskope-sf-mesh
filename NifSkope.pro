@@ -224,7 +224,7 @@ HEADERS += \
 	lib/dxgiformat.h \
 	lib/json.hpp \
 	lib/meshlet.h \
-	lib/meshoptimizer/meshoptimizer.h \
+	lib/meshoptimizer/src/meshoptimizer.h \
 	lib/stb_image.h \
 	lib/stb_image_write.h \
 	lib/tiny_gltf.h
@@ -328,10 +328,10 @@ SOURCES += \
 	src/spellbook.cpp \
 	src/version.cpp \
 	lib/meshlet.cpp \
-	lib/meshoptimizer/clusterizer.cpp \
-	lib/meshoptimizer/simplifier.cpp \
-	lib/meshoptimizer/spatialorder.cpp \
-	lib/meshoptimizer/vcacheoptimizer.cpp
+	lib/meshoptimizer/src/clusterizer.cpp \
+	lib/meshoptimizer/src/simplifier.cpp \
+	lib/meshoptimizer/src/spatialorder.cpp \
+	lib/meshoptimizer/src/vcacheoptimizer.cpp
 
 RESOURCES += \
 	res/nifskope.qrc

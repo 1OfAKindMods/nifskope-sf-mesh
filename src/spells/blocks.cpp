@@ -566,8 +566,9 @@ void blockFilter( NifModel * nif, std::list<QString>& blocks, const QString & ty
 			// Introduced in 20.2.0.8
 			|| (( s.startsWith( "NiPhysX" ) && nif->getVersionNumber() < 0x14020008 ))
 			// Introduced in 20.5
-			|| ( ((s.startsWith( "NiPS" ) && !s.contains( "PSys" )) || s.startsWith( "NiMesh" )
-				   || s.contains( "Evaluator" )
+			|| ( ((s.startsWith( "NiPS" ) && !s.contains( "PSys" ))
+					|| (s.startsWith( "NiMesh" ) && !s.startsWith( "NiMeshP" ))
+					|| s.contains( "Evaluator" )
 				   ) && nif->getVersionNumber() < 0x14050000 )
 			// Deprecated in 20.5
 			|| ( (s.startsWith( "NiParticle" ) || s.contains( "PSys" ) || s.startsWith( "NiTri" )

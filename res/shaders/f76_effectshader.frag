@@ -50,7 +50,7 @@ varying vec4 C;
 varying vec4 D;
 
 varying mat3 btnMatrix;
-varying mat4 reflMatrix;
+varying mat3 reflMatrix;
 
 vec3 ViewDir_norm = normalize( ViewDir );
 mat3 btnMatrix_norm = mat3( normalize( btnMatrix[0] ), normalize( btnMatrix[1] ), normalize( btnMatrix[2] ) );
@@ -92,7 +92,7 @@ void main( void )
 	float LdotH = max( dot(L, H), 0.000001 );
 	float NdotNegL = max( dot(normal, -L), 0.000001 );
 
-	vec3 reflectedWS = vec3(reflMatrix * (gl_ModelViewMatrixInverse * vec4(R, 0.0))) * vec3(1.0, 1.0, -1.0);
+	vec3 reflectedWS = reflMatrix * R;
 
 	if ( greyscaleAlpha )
 		baseMap.a = 1.0;

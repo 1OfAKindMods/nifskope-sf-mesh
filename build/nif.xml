@@ -583,6 +583,8 @@
         Bethesda Havok. Material descriptor for a Havok shape in Skyrim. CRC32 of the lowercase of the Creation Kit Material Name.
         <option value="0" name="SKY_HAV_MAT_NONE">Invalid Material</option>
         <option value="131151687" name="SKY_HAV_MAT_BROKEN_STONE">Broken Stone</option>
+        <option value="165778930" name="SKY_HAV_MAT_MATERIAL_BLOCK_BLADE_1HAND">Material Block Blade 1Hand</option>
+        <option value="220124585" name="SKY_HAV_MAT_MATERIAL_MEAT">Material Meat</option>
         <option value="322207473" name="SKY_HAV_MAT_MATERIAL_CARRIAGE_WHEEL">Material Carriage Wheel</option>
         <option value="346811165" name="SKY_HAV_MAT_MATERIAL_METAL_LIGHT">Material Metal Light</option>
         <option value="365420259" name="SKY_HAV_MAT_LIGHT_WOOD">Light Wood</option>
@@ -591,8 +593,11 @@
         <option value="438912228" name="SKY_HAV_MAT_MATERIAL_CHAIN_METAL">Material Chain Metal</option>
         <option value="493553910" name="SKY_HAV_MAT_BOTTLE">Bottle</option>
         <option value="500811281" name="SKY_HAV_MAT_WOOD">Wood</option>
+        <option value="534864873" name="SKY_HAV_MAT_MATERIAL_ASH">Material Ash</option>
         <option value="591247106" name="SKY_HAV_MAT_SKIN">Skin</option>
-        <option value="617099282" name="SKY_HAV_MAT_UNKNOWN_617099282">Unknown in Creation Kit v1.9.32.0. Found in Dawnguard DLC in meshes\dlc01\clutter\dlc01deerskin.nif.</option>
+        <option value="593401068" name="SKY_HAV_MAT_MATERIAL_BLOCK_BLUNT">Material Block Blunt</option>
+        <option value="617099282" name="SKY_HAV_MAT_MATERIAL_CLOTH">Material Cloth</option>
+        <option value="668408902" name="SKY_HAV_MAT_INSECT">Insect</option>
         <option value="732141076" name="SKY_HAV_MAT_BARREL">Barrel</option>
         <option value="781661019" name="SKY_HAV_MAT_MATERIAL_CERAMIC_MEDIUM">Material Ceramic Medium</option>
         <option value="790784366" name="SKY_HAV_MAT_MATERIAL_BASKET">Material Basket</option>
@@ -600,34 +605,46 @@
         <option value="880200008" name="SKY_HAV_MAT_STAIRS_GLASS">Stairs Glass</option>
         <option value="899511101" name="SKY_HAV_MAT_STAIRS_STONE">Stairs Stone</option>
         <option value="1024582599" name="SKY_HAV_MAT_WATER">Water</option>
-        <option value="1028101969" name="SKY_HAV_MAT_UNKNOWN_1028101969">Unknown in Creation Kit v1.6.89.0. Found in actors\draugr\character assets\skeletons.nif.</option>
-        <option value="1060167844" name="SKY_HAV_MAT_MATERIAL_BLADE_1HAND">Material Blade 1 Hand</option>
+        <option value="1028101969" name="SKY_HAV_MAT_MATERIAL_BONE_ACTOR">Material Bone Actor</option>
+        <option value="1060167844" name="SKY_HAV_MAT_MATERIAL_BLADE_1HAND">Material Blade 1Hand</option>
         <option value="1264672850" name="SKY_HAV_MAT_MATERIAL_BOOK">Material Book</option>
         <option value="1286705471" name="SKY_HAV_MAT_MATERIAL_CARPET">Material Carpet</option>
         <option value="1288358971" name="SKY_HAV_MAT_SOLID_METAL">Solid Metal</option>
         <option value="1305674443" name="SKY_HAV_MAT_MATERIAL_AXE_1HAND">Material Axe 1Hand</option>
-        <option value="1440721808" name="SKY_HAV_MAT_UNKNOWN_1440721808">Unknown in Creation Kit v1.6.89.0. Found in armor\draugr\draugrbootsfemale_go.nif or armor\amuletsandrings\amuletgnd.nif.</option>
+        <option value="1312943906" name="SKY_HAV_MAT_MATERIAL_BLOCK_BLADE_2HAND">Material Block Blade 2Hand</option>
+        <option value="1322093133" name="SKY_HAV_MAT_ORGANIC_LARGE">Organic Large</option>
+        <option value="1440721808" name="SKY_HAV_MAT_CHAIN_METAL">Chain Metal</option>
         <option value="1461712277" name="SKY_HAV_MAT_STAIRS_WOOD">Stairs Wood</option>
         <option value="1486385281" name="SKY_HAV_MAT_MUD">Mud</option>
         <option value="1550912982" name="SKY_HAV_MAT_MATERIAL_BOULDER_SMALL">Material Boulder Small</option>
         <option value="1560365355" name="SKY_HAV_MAT_STAIRS_SNOW">Stairs Snow</option>
         <option value="1570821952" name="SKY_HAV_MAT_HEAVY_STONE">Heavy Stone</option>
-        <option value="1574477864" name="SKY_HAV_MAT_UNKNOWN_1574477864">Unknown in Creation Kit v1.6.89.0. Found in actors\dragon\character assets\skeleton.nif.</option>
+        <option value="1574477864" name="SKY_HAV_MAT_CHARACTER_BUMPER">Character Bumper</option>
         <option value="1591009235" name="SKY_HAV_MAT_UNKNOWN_1591009235">Unknown in Creation Kit v1.6.89.0. Found in trap objects or clutter\displaycases\displaycaselgangled01.nif or actors\deer\character assets\skeleton.nif.</option>
         <option value="1607128641" name="SKY_HAV_MAT_MATERIAL_BOWS_STAVES">Material Bows Staves</option>
+        <option value="1668849266" name="SKY_HAV_MAT_MATERIAL_SOLID_METAL">Material Solid Metal</option>
+        <option value="1730220269" name="SKY_HAV_MAT_ALDUIN">Alduin</option>
+        <option value="1734341287" name="SKY_HAV_MAT_MATERIAL_WOOD_MEDIUM">Material Wood Medium</option>
+        <option value="1763418903" name="SKY_HAV_MAT_MATERIAL_BLOCK_BOWS_STAVES">Material Block Bows Staves</option>
         <option value="1803571212" name="SKY_HAV_MAT_MATERIAL_WOOD_AS_STAIRS">Material Wood As Stairs</option>
+        <option value="1820198263" name="SKY_HAV_MAT_MATERIAL_BLADE_2HAND_">Material Blade 2Hand </option>
         <option value="1848600814" name="SKY_HAV_MAT_GRASS">Grass</option>
         <option value="1885326971" name="SKY_HAV_MAT_MATERIAL_BOULDER_LARGE">Material Boulder Large</option>
         <option value="1886078335" name="SKY_HAV_MAT_MATERIAL_STONE_AS_STAIRS">Material Stone As Stairs</option>
         <option value="2022742644" name="SKY_HAV_MAT_MATERIAL_BLADE_2HAND">Material Blade 2Hand</option>
         <option value="2025794648" name="SKY_HAV_MAT_MATERIAL_BOTTLE_SMALL">Material Bottle Small</option>
+        <option value="2058949504" name="SKY_HAV_MAT_BONE_ACTOR">Bone Actor</option>
         <option value="2168343821" name="SKY_HAV_MAT_SAND">Sand</option>
         <option value="2229413539" name="SKY_HAV_MAT_HEAVY_METAL">Heavy Metal</option>
-        <option value="2290050264" name="SKY_HAV_MAT_UNKNOWN_2290050264">Unknown in Creation Kit v1.9.32.0. Found in Dawnguard DLC in meshes\dlc01\clutter\dlc01sabrecatpelt.nif.</option>
+        <option value="2290050264" name="SKY_HAV_MAT_MATERIAL_WOOD_HEAVY">Material Wood Heavy</option>
+        <option value="2431524493" name="SKY_HAV_MAT_MATERIAL_ICE_FORM">Material Ice Form</option>
         <option value="2518321175" name="SKY_HAV_MAT_DRAGON">Dragon</option>
         <option value="2617944780" name="SKY_HAV_MAT_MATERIAL_BLADE_1HAND_SMALL">Material Blade 1Hand Small</option>
         <option value="2632367422" name="SKY_HAV_MAT_MATERIAL_SKIN_SMALL">Material Skin Small</option>
         <option value="2742858142" name="SKY_HAV_MAT_MATERIAL_POTS_PANS">Material Pots Pans</option>
+        <option value="2794252627" name="SKY_HAV_MAT_MATERIAL_STAIRS_WOOD">Material Stairs Wood</option>
+        <option value="2821299363" name="SKY_HAV_MAT_MATERIAL_SKIN_SKELETON">Material Skin Skeleton</option>
+        <option value="2872791301" name="SKY_HAV_MAT_MATERIAL_BLUNT_1HAND">Material Blunt 1Hand</option>
         <option value="2892392795" name="SKY_HAV_MAT_STAIRS_BROKEN_STONE">Stairs Broken Stone</option>
         <option value="2965929619" name="SKY_HAV_MAT_MATERIAL_SKIN_LARGE">Material Skin Large</option>
         <option value="2974920155" name="SKY_HAV_MAT_ORGANIC">Organic</option>
@@ -635,10 +652,13 @@
         <option value="3070783559" name="SKY_HAV_MAT_HEAVY_WOOD">Heavy Wood</option>
         <option value="3074114406" name="SKY_HAV_MAT_MATERIAL_CHAIN">Material Chain</option>
         <option value="3106094762" name="SKY_HAV_MAT_DIRT">Dirt</option>
+        <option value="3312543676" name="SKY_HAV_MAT_GHOST">Ghost</option>
         <option value="3387452107" name="SKY_HAV_MAT_MATERIAL_SKIN_METAL_LARGE">Material Skin Metal Large</option>
+        <option value="3400476823" name="SKY_HAV_MAT_MATERIAL_BLOCK_AXE">Material Block Axe</option>
         <option value="3424720541" name="SKY_HAV_MAT_MATERIAL_ARMOR_LIGHT">Material Armor Light</option>
         <option value="3448167928" name="SKY_HAV_MAT_MATERIAL_SHIELD_LIGHT">Material Shield Light</option>
         <option value="3589100606" name="SKY_HAV_MAT_MATERIAL_COIN">Material Coin</option>
+        <option value="3662306947" name="SKY_HAV_MAT_MATERIAL_BLOCK_BLUNT_2HAND">Material Block Blunt 2Hand</option>
         <option value="3702389584" name="SKY_HAV_MAT_MATERIAL_SHIELD_HEAVY">Material Shield Heavy</option>
         <option value="3708432437" name="SKY_HAV_MAT_MATERIAL_ARMOR_HEAVY">Material Armor Heavy</option>
         <option value="3725505938" name="SKY_HAV_MAT_MATERIAL_ARROW">Material Arrow</option>
@@ -649,15 +669,11 @@
         <option value="3855001958" name="SKY_HAV_MAT_MATERIAL_SKIN_METAL_SMALL">Material Skin Metal Small</option>
         <option value="3895166727" name="SKY_HAV_MAT_WARD">Ward</option>
         <option value="3934839107" name="SKY_HAV_MAT_WEB">Web</option>
+        <option value="3941234649" name="SKY_HAV_MAT_MATERIAL_BLADE_1HAND_">Material Blade 1Hand </option>
         <option value="3969592277" name="SKY_HAV_MAT_MATERIAL_BLUNT_2HAND">Material Blunt 2Hand</option>
+        <option value="3974071006" name="SKY_HAV_MAT_STAIRS_METAL">Stairs Metal</option>
         <option value="4239621792" name="SKY_HAV_MAT_UNKNOWN_4239621792">Unknown in Creation Kit v1.9.32.0. Found in Dawnguard DLC in meshes\dlc01\prototype\dlc1protoswingingbridge.nif.</option>
         <option value="4283869410" name="SKY_HAV_MAT_MATERIAL_BOULDER_MEDIUM">Material Boulder Medium</option>
-        <option value="2794252627" name="SKY_HAV_MAT_UNKNOWN_2794252627" />
-        <option value="1668849266" name="SKY_HAV_MAT_UNKNOWN_1668849266" />
-        <option value="1734341287" name="SKY_HAV_MAT_UNKNOWN_1734341287" />
-        <option value="3974071006" name="SKY_HAV_MAT_UNKNOWN_3974071006" />
-        <option value="3941234649" name="SKY_HAV_MAT_UNKNOWN_3941234649">tfxsteelswordbloody</option>
-        <option value="1820198263" name="SKY_HAV_MAT_UNKNOWN_1820198263">steelgreatsword</option>
     </enum>
 
     <enum name="OblivionLayer" storage="byte" versions="#BETHESDA#">

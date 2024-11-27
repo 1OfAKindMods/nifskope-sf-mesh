@@ -11,7 +11,7 @@ varying vec3 ViewDir;
 varying vec4 A;
 varying vec4 D;
 
-varying mat4 reflMatrix;
+varying mat3 reflMatrix;
 
 float LightingFuncGGX_REF( float LdotR, float roughness )
 {
@@ -47,7 +47,7 @@ void main()
 	float	VdotL = dot( V, L );
 	float	VdotL0 = max( VdotL, 0.0 );
 
-	vec3	viewWS = vec3( reflMatrix * (gl_ModelViewMatrixInverse * vec4(V, 0.0)) );
+	vec3	viewWS = reflMatrix * V;
 
 	float	m = clamp( float(skyCubeMipLevel), 0.0, 6.0 );
 	float	roughness = ( 5.0 - sqrt( 25.0 - 4.0 * m ) ) / 4.0;

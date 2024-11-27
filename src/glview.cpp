@@ -40,7 +40,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "model/nifmodel.h"
 #include "ui/settingsdialog.h"
 #include "ui/widgets/fileselect.h"
-#include "libfo76utils/src/fp32vec4.hpp"
+#include "fp32vec4.hpp"
 #include "ui/widgets/filebrowser.h"
 
 #include <QApplication>
@@ -1697,7 +1697,7 @@ void GLView::saveImage()
 					}
 
 					if ( !writer.write( rgbImg ) )
-						throw FO76UtilsError( "%s", writer.errorString().toStdString().c_str() );
+						throw NifSkopeError( "%s", writer.errorString().toStdString().c_str() );
 
 				} else {	// DDS
 					DDSOutputFile	writer( file->file().toStdString().c_str(), imgWidth, imgHeight,

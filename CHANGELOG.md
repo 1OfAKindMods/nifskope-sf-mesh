@@ -1,8 +1,22 @@
  == CHANGELOG ==
 
+* Implemented rendering bhkCylinderShape (fix to issue https://github.com/hexabits/nifskope/issues/37).
+* Fixed the block types NiMeshPSysData and NiMeshParticleSystem being incorrectly filtered out by 'Block/Insert'.
+
+#### NifSkope-2.0.dev9-20241112
+
 * Implemented support for editing and saving Fallout 76 materials.
+* New spell for browsing Starfield .mesh files, it is available when right clicking on a 'Mesh Path' item. Note that mesh paths in the format used by the base game are excluded from the file list, so the spell is only useful for browsing new meshes with human readable paths. The Update Bounds spell is automatically cast on the parent block if the path is changed.
+* Internal geometry data can be saved as a single .mesh file (without converting the BSGeometry) to any path by right clicking on Mesh Data and using the 'Mesh/Save As' spell.
+* The Texture/Info spell is now applicable to any string item that ends with ".dds", and it opens a dialog showing information and a preview of the texture.
+* Implemented Transform/Apply for Starfield (internal geometry only).
 * Starfield and Fallout 76 shading fixes.
+* Experimental support for importing glTF models that use anisotropic scaling. Non-uniform scale factors are applied to the rotation matrix, so the model should be fixed manually by applying the transform and recalculating normals and tangents.
+* Optimizations to the texture and material browsers, and to PBR cube map filtering and loading Radiance HDR format files.
+* Fixed the 'Texture/Choose' spell being incorrectly applicable to items that are not texture paths, and the spell can now also be used on Starfield texture set items without expanding the structure.
 * Fixed error on BSFaceFX and BoneModifierExtra blocks.
+* Fixed incorrect cube map orientation on skinned meshes.
+* Fixed warnings about missing items when using the Triangulate and Stripify mesh spells.
 
 #### NifSkope-2.0.dev9-20241028
 

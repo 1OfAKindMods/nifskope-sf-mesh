@@ -40,8 +40,6 @@ uniform float lightingEffect2;
 
 uniform float envReflection;
 
-uniform mat4 worldMatrix;
-
 varying vec3 LightDir;
 varying vec3 ViewDir;
 
@@ -50,6 +48,7 @@ varying vec4 C;
 varying vec4 D;
 
 varying mat3 tbnMatrix;
+varying mat3 reflMatrix;
 
 mat3 tbnMatrix_norm = mat3(normalize(tbnMatrix[0]), normalize(tbnMatrix[1]), normalize(tbnMatrix[2]));
 
@@ -114,7 +113,7 @@ void main( void )
 	float NdotNegL = max( dot(normal, -L), 0.0 );
 
 	vec3 reflected = reflect( -E, normal );
-	vec3 reflectedWS = vec3( worldMatrix * (gl_ModelViewMatrixInverse * vec4( reflected, 0.0 )) );
+	vec3 reflectedWS = reflMatrix * reflected;
 
 
 	vec3 albedo = baseMap.rgb * C.rgb;

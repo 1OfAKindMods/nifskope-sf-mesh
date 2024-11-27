@@ -10,6 +10,7 @@
 #include "model/nifmodel.h"
 
 #include "lib/nvtristripwrapper.h"
+#include "libfo76utils/src/ddstxt16.hpp"
 
 #include <QButtonGroup>
 #include <QCheckBox>
@@ -201,7 +202,9 @@ public:
 			return true;
 		else if ( nif->isNiBlock( iBlock, "TileShaderProperty" ) && itemName == "File Name" )
 			return true;
-		else if ( nif->getBSVersion() >= 151 && ( itemName == "Path" || itemName.startsWith( QLatin1StringView( "Texture " ) ) )
+		else if ( nif->getBSVersion() >= 151
+					&& ( itemName == "Path"
+						|| ( itemName.back().isDigit() && itemName.startsWith( QLatin1StringView( "Texture " ) ) ) )
 					&& nif->blockInherits( iBlock, "BSShaderProperty" ) )
 			return true;
 
@@ -230,7 +233,7 @@ public:
 			iFile = idx;
 		} else if ( nif->getBSVersion() >= 151 && ( i->name() == "Path" || i->name().startsWith( QLatin1StringView( "Texture " ) ) )
 					&& nif->blockInherits( iBlock, "BSShaderProperty" ) ) {
-			iFile = idx;
+			iFile = ( nif->getBSVersion() < 170 || i->name() == "Path" ? idx : nif->getIndex( i, "Path" ) );
 			isMaterialFile = true;
 		}
 
@@ -567,10 +570,10 @@ REGISTER_SPELL( spAddDecal3Map )
 //! Wrap a value between 0 and 1
 #define wrap01f( X ) ( X > 1 ? X - floor( X ) : X < 0 ? X - floor( X ) : X )
 
-//! Saves the UV layout as a TGA
-class spTextureTemplate final : public Spell
+//! Saves the UV layout as a PNG or BMP
+class spTextureLayout final : public Spell
 {
-	QString name() const override final { return Spell::tr( "Export Template" ); }
+	QString name() const override final { return Spell::tr( "Export UV Layout" ); }
 	QString page() const override final { return Spell::tr( "Texture" ); }
 	bool constant() const override final { return true; }
 
@@ -589,10 +592,12 @@ class spTextureTemplate final : public Spell
 		if ( nif->rowCount( iUVs ) <= 0 && nif->getBSVersion() < 100 )
 			return index;
 
-		// fire up a dialog to set the user parameters
+		// Fire up a dialog to set the user parameters
 		QDialog dlg;
 		QGridLayout * lay = new QGridLayout;
 		dlg.setLayout( lay );
+		dlg.setWindowTitle( "Export UV Layout" );
+		dlg.setMinimumSize( 227, 240 );
 
 		FileSelector * file = new FileSelector( FileSelector::SaveFile, "File", QBoxLayout::RightToLeft );
 		file->setFilter( { "", "PNG (*.png)", "BMP (*.bmp)" } );
@@ -610,54 +615,80 @@ class spTextureTemplate final : public Spell
 		lay->addWidget( set, 2, 1 );
 
 		for ( int i = 0; i < nif->rowCount( iUVs ); i++ )
-			set->addItem( QString( "set %1" ).arg( i ) );
+			set->addItem( QString( "Set %1" ).arg( i ) );
 
 		lay->addWidget( new QLabel( "Wrap Mode" ), 3, 0 );
 		QComboBox * wrap = new QComboBox;
 		lay->addWidget( wrap, 3, 1 );
-		wrap->addItem( "wrap" );
-		wrap->addItem( "clamp" );
+		wrap->addItem( "Wrap" );
+		wrap->addItem( "Clamp" );
 
 		lay->addWidget( new QLabel( "Antialias" ), 4, 0 );
 		QCheckBox * antialias = new QCheckBox;
 		lay->addWidget( antialias, 4, 1 );
 
-		lay->addWidget( new QLabel( "Wire Color" ), 5, 0 );
+		lay->addWidget( new QLabel( "Solid Fill" ), 5, 0 );
+		QCheckBox * solidFill = new QCheckBox;
+		lay->addWidget( solidFill, 5, 1 );
+
+		lay->addWidget( new QLabel( "Wire Color" ), 6, 0 );
 		QPushButton * wireColor = new QPushButton;
-		lay->addWidget( wireColor, 5, 1 );
+		lay->addWidget( wireColor, 6, 1 );
+
+		lay->addWidget( new QLabel( "Fill Color" ), 7, 0 );
+		QPushButton * fillColor = new QPushButton;
+		lay->addWidget( fillColor, 7, 1 );
 
 		QPushButton * ok = new QPushButton( "Ok" );
 		QObject::connect( ok, &QPushButton::clicked, &dlg, &QDialog::accept );
-		lay->addWidget( ok, 6, 0, 1, 2 );
+		lay->addWidget( ok, 8, 0 );
+
+		QPushButton * cancel = new QPushButton( "Cancel" );
+		QObject::connect( cancel, &QPushButton::clicked, &dlg, &QDialog::reject );
+		lay->addWidget( cancel, 8, 1 );
 
 		QSettings settings;
 		QString keyGroup = QString( "%1/%2/%3/" ).arg( "Spells", page(), name() );
 
-		// Key formatter, avoid lots of beginGroup() and endGroup() this way
+		// Key formatter, avoids lots of beginGroup() and endGroup() this way
 		auto k = [&keyGroup]( const QString& key ) { return QString( "%1%2" ).arg( keyGroup, key ); };
 
 		wrap->setCurrentIndex( settings.value( k( "Wrap Mode" ), 0 ).toInt() );
 		size->setCurrentIndex( settings.value( k( "Image Size" ), 2 ).toInt() );
 		file->setText( settings.value( k( "File Name" ), "" ).toString() );
 		antialias->setChecked( settings.value( k( "Antialias" ), true ).toBool() );
+		solidFill->setChecked( settings.value( k( "Solid Fill" ), false ).toBool() );
 
-		QString colorARGB = settings.value( k( "Wire Color" ), "#FF000000" ).toString();
-		wireColor->setText( colorARGB );
-		QString bc = "background-color: ";
-		wireColor->setStyleSheet( bc + colorARGB );
+		QString colorARGB1 = settings.value( k( "Wire Color" ), "#FF000000" ).toString();
+		wireColor->setText( colorARGB1 );
+		QString bc1 = "background-color: ";
+		wireColor->setStyleSheet( bc1 + colorARGB1 );
 
 		QColorDialog * colorDlg = new QColorDialog;
-		QObject::connect( wireColor, &QPushButton::clicked, [&]()
-			{
-				QColor c = colorDlg->getColor( wireColor->text(), nullptr, "Wire Color", QColorDialog::ShowAlphaChannel );
+		QObject::connect( wireColor, &QPushButton::clicked, [&]() {
+			QColor c = colorDlg->getColor( wireColor->text(), nullptr, "Wire Color", QColorDialog::ShowAlphaChannel );
 
-				if ( c.isValid() ) {
-					colorARGB = c.name( QColor::NameFormat::HexArgb );
-					wireColor->setText( colorARGB );
-					wireColor->setStyleSheet( bc + colorARGB );
-				}
+			if ( c.isValid() ) {
+				colorARGB1 = c.name( QColor::NameFormat::HexArgb );
+				wireColor->setText( colorARGB1 );
+				wireColor->setStyleSheet( bc1 + colorARGB1 );
 			}
-		);
+		} );
+
+		QString colorARGB2 = settings.value( k( "Fill Color" ), "#FFFFFFFF" ).toString();
+		fillColor->setText( colorARGB2 );
+		QString bc2 = "background-color: ";
+		fillColor->setStyleSheet( bc2 + colorARGB2 );
+
+		QObject::connect( fillColor, &QPushButton::clicked, [&]() {
+			QColor c = colorDlg->getColor( fillColor->text(), nullptr, "Fill Color", QColorDialog::ShowAlphaChannel );
+
+			if ( c.isValid() ) {
+				colorARGB2 = c.name( QColor::NameFormat::HexArgb );
+				fillColor->setText( colorARGB2 );
+				fillColor->setStyleSheet( bc2 + colorARGB2 );
+			}
+		} );
 
 		if ( dlg.exec() != QDialog::Accepted )
 			return index;
@@ -666,9 +697,11 @@ class spTextureTemplate final : public Spell
 		settings.setValue( k( "Image Size" ), size->currentIndex() );
 		settings.setValue( k( "File Name" ), file->text() );
 		settings.setValue( k( "Antialias" ), antialias->isChecked() );
-		settings.setValue( k( "Wire Color" ), colorARGB );
+		settings.setValue( k( "Solid Fill" ), solidFill->isChecked() );
+		settings.setValue( k( "Wire Color" ), colorARGB1 );
+		settings.setValue( k( "Fill Color" ), colorARGB2 );
 
-		// get the selected coord set
+		// Get the selected coord set
 		QModelIndex iSet = nif->getIndex( iUVs, set->currentIndex(), 0 );
 
 		QVector<Vector2> uv;
@@ -705,7 +738,7 @@ class spTextureTemplate final : public Spell
 			uv = nif->getArray<Vector2>( iSet );
 		}
 
-		// get the triangles
+		// Get the triangles
 		QModelIndex iData = getData( nif, index );
 		QModelIndex iPoints = nif->getIndex( iData, "Points" );
 
@@ -720,7 +753,7 @@ class spTextureTemplate final : public Spell
 			tri = nif->getArray<Triangle>( nif->getIndex( getData( nif, index ), "Triangles" ) );
 		}
 
-		// render the template image
+		// Render the UV layout onto the image
 		quint16 s = size->currentText().toInt();
 
 		QImage img( s, s, QImage::Format_ARGB32 );
@@ -731,7 +764,11 @@ class spTextureTemplate final : public Spell
 		pntr.setRenderHint( QPainter::Antialiasing, antialias->isChecked() );
 		pntr.fillRect( img.rect(), QColor( 0xff, 0xff, 0xff, 0 ) );
 		//pntr.scale( s, s ); // Seems to work differently in Qt 5
-		pntr.setPen( QColor( colorARGB ) );
+		pntr.setPen( QColor( colorARGB1 ) );
+		if ( solidFill->isChecked() ) {
+			// setBrush() enables the filling of drawn polygons
+			pntr.setBrush( QColor( colorARGB2 ) );
+		}
 
 		bool wrp = wrap->currentIndex() == 0;
 
@@ -760,7 +797,7 @@ class spTextureTemplate final : public Spell
 			pntr.drawPolygon( points, 3 );
 		}
 
-		// write the file
+		// Write the file
 		QString filename = file->text();
 
 		// TODO: Fix FileSelector class so that this isn't necessary.
@@ -786,7 +823,7 @@ class spTextureTemplate final : public Spell
 	}
 };
 
-REGISTER_SPELL( spTextureTemplate )
+REGISTER_SPELL( spTextureLayout )
 
 //! Global search and replace of texturing apply modes
 class spMultiApplyMode final : public Spell
@@ -885,44 +922,163 @@ public:
 
 REGISTER_SPELL( spMultiApplyMode )
 
-//! Debug function - display information about a texture
+
+//! Display information about a texture
 class spTexInfo final : public Spell
 {
 public:
 	QString name() const override final { return Spell::tr( "Info" ); }
 	QString page() const override final { return Spell::tr( "Texture" ); }
+	bool constant() const override final { return true; }
 
 	bool isApplicable( const NifModel * nif, const QModelIndex & index ) override final
 	{
-		QModelIndex iBlock = nif->getBlockIndex( index );
+		if ( !index.isValid() )
+			return false;
+		const NifItem *	item = nif->getItem( index );
+		if ( !item )
+			return false;
 
+		QModelIndex iBlock = nif->getBlockIndex( item );
 		if ( nif->isNiBlock( iBlock, "NiSourceTexture" ) )
 			return true;
 
-		return false;
+		return ( item->isString()
+				&& nif->get<QString>( item ).endsWith( QLatin1StringView( ".dds" ), Qt::CaseInsensitive ) );
 	}
+
+	static void showTexture( NifModel * nif, const QString & filename );
 
 	QModelIndex cast( NifModel * nif, const QModelIndex & index ) override final
 	{
-		TexCache * tex = new TexCache();
-		tex->setNifFolder( nif->getFolder() );
-		int isExternal = nif->get<int>( index, "Use External" );
+		const NifItem *	item = nif->getItem( index );
+		if ( !item )
+			return index;
 
-		if ( isExternal ) {
-			QString filename = nif->get<QString>( index, "File Name" );
-			tex->bind( filename );
-		} else {
-			tex->bind( index );
+		QString	filename;
+
+		if ( item->isString() ) {
+			filename = nif->get<QString>( item );
+			if ( filename.endsWith( QLatin1StringView( ".dds" ), Qt::CaseInsensitive ) ) {
+				showTexture( nif, filename );
+				return index;
+			}
 		}
 
-		qDebug() << tex->info( index );
-		return QModelIndex();
+		QModelIndex	iBlock = nif->getBlockIndex( item );
+		int	isExternal = nif->get<int>( iBlock, "Use External" );
+		if ( isExternal ) {
+			filename = nif->get<QString>( iBlock, "File Name" );
+			if ( filename.isEmpty() )
+				return index;
+		}
+
+		TexCache	tex;
+		tex.setNifFolder( nif->getFolder() );
+
+		if ( isExternal )
+			tex.bind( filename );
+		else
+			tex.bind( iBlock );
+
+		QMessageBox::information( nullptr, tr( "Texture information" ), tex.info( iBlock ) );
+		return index;
 	}
 };
 
-#ifndef QT_NO_DEBUG
+void spTexInfo::showTexture( NifModel * nif, const QString & filename )
+{
+	try {
+		QString	fullPath = nif->findResourceFile( filename, "textures/", ".dds" );
+		if ( fullPath.isEmpty() )
+			return;
+		QByteArray	textureData;
+		if ( !nif->getResourceFile( textureData, fullPath, nullptr, nullptr ) )
+			return;
+		DDSTexture16	t( reinterpret_cast< const unsigned char * >( textureData.constData() ),
+							size_t( textureData.size() ), 0, true );
+
+		QDialog	dlg;
+
+		int	w = t.getWidth();
+		int	h = t.getHeight();
+		double	r = dlg.devicePixelRatioF();
+		double	scale = ( 512.0 * r ) / double( std::max( w, h ) );
+		w = std::max< int >( int( double( w ) * scale + 0.5 ), 1 );
+		h = std::max< int >( int( double( h ) * scale + 0.5 ), 1 );
+		float	m = std::min( std::max( float( std::log2( scale ) * -1.0 ), 0.0f ), 16.0f );
+		bool	isNormalMap = ( t.getChannelCount() == 2 && !fullPath.endsWith( QLatin1StringView( "_s.dds" ) ) );
+		bool	isSigned = false;
+		switch ( t.getDXGIFormat() ) {
+		case 0x0D:				// DXGI_FORMAT_R16G16B16A16_SNORM
+		case 0x1F:				// DXGI_FORMAT_R8G8B8A8_SNORM
+		case 0x25:				// DXGI_FORMAT_R16G16_SNORM
+		case 0x33:				// DXGI_FORMAT_R8G8_SNORM
+		case 0x3A:				// DXGI_FORMAT_R16_SNORM
+		case 0x3F:				// DXGI_FORMAT_R8_SNORM
+		case 0x51:				// DXGI_FORMAT_BC4_SNORM
+		case 0x54:				// DXGI_FORMAT_BC5_SNORM
+		case 0x60:				// DXGI_FORMAT_BC6H_SF16
+			isSigned = true;
+			break;
+		}
+		std::vector< std::uint32_t >	scaledImage( size_t( w ) * size_t( h ) );
+		float	uScale = 1.0f / float( w );
+		float	vScale = 1.0f / float( h );
+		float	uOffset = uScale * 0.5f;
+		float	vOffset = vScale * 0.5f;
+		for ( int y = 0; y < h; y++ ) {
+			float	yc = float( y ) * vScale + vOffset;
+			std::uint32_t *	d = scaledImage.data() + ( size_t( y ) * size_t( w ) );
+			for ( int x = 0; x < w; x++ ) {
+				float	xc = float( x ) * uScale + uOffset;
+				FloatVector4	c( t.getPixelTC( xc, yc, m ) );
+				if ( isSigned )
+					c = c * 0.5f + 0.5f;
+				if ( isNormalMap )
+					c[2] = float( std::sqrt( std::max( 0.25f - ( c - 0.5f ).dotProduct2( c - 0.5f ), 0.0f ) ) + 0.5f );
+				d[x] = std::uint32_t( c.shuffleValues( 0xC6 ) * 255.0f );	// RGBA -> BGRA
+			}
+		}
+		QImage	img( reinterpret_cast< const unsigned char * >( scaledImage.data() ), w, h, QImage::Format_ARGB32 );
+		QPixmap	p( QPixmap::fromImage( img ) );
+		p.setDevicePixelRatio( r );
+
+		QLabel *	lb[19];
+		lb[0] = new QLabel( tr( "Texture information" ), &dlg );
+		lb[1] = new QLabel( QString(), &dlg );
+		lb[2] = new QLabel( tr( "File name" ), &dlg );
+		lb[3] = new QLabel( filename, &dlg );
+		lb[4] = new QLabel( tr( "Full path" ), &dlg );
+		lb[5] = new QLabel( fullPath, &dlg );
+		lb[6] = new QLabel( tr( "File size" ), &dlg );
+		lb[7] = new QLabel( QString::number( textureData.size() ), &dlg );
+		lb[8] = new QLabel( tr( "Width" ), &dlg );
+		lb[9] = new QLabel( QString::number( t.getWidth() ), &dlg );
+		lb[10] = new QLabel( tr( "Height" ), &dlg );
+		lb[11] = new QLabel( QString::number( t.getHeight() ), &dlg );
+		lb[12] = new QLabel( tr( "Mipmaps" ), &dlg );
+		lb[13] = new QLabel( QString::number( t.getMaxMipLevel() + 1 ), &dlg );
+		lb[14] = new QLabel( tr( "Num textures" ), &dlg );
+		lb[15] = new QLabel( QString::number( t.getTextureCount() ), &dlg );
+		lb[16] = new QLabel( tr( "Pixel format" ), &dlg );
+		lb[17] = new QLabel( QString( t.getFormatName() ), &dlg );
+		lb[18] = new QLabel( &dlg );
+		lb[18]->setPixmap( p );
+		QGridLayout *	grid = new QGridLayout;
+		dlg.setLayout( grid );
+		for ( int i = 0; i < 19; i++ ) {
+			int	y = ( i < 2 ? i : ( i + 2 ) >> 1 );
+			int	x = ( i + int( i < 2 ) ) & 1;
+			grid->addWidget( lb[i], y, x, 1, ( i == 1 || i == 18 ? 3 : ( i & 1 ) + 1 ) );
+		}
+		dlg.exec();
+	} catch ( NifSkopeError & ) {
+	}
+}
+
 REGISTER_SPELL( spTexInfo )
-#endif
+
 
 //! Export a packed NiPixelData texture
 class spExportTexture final : public Spell

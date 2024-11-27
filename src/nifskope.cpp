@@ -1485,12 +1485,12 @@ bool NifSkope::batchProcessFiles(
 			{
 				QFile	f( fileName );
 				if ( !f.open( QIODeviceBase::ReadOnly ) )
-					throw FO76UtilsError( "error opening file" );
+					throw NifSkopeError( "error opening file" );
 				std::string	tmp( fileName.toStdString() );
 				tmpNif->load( f, tmp.c_str() );
 			}
 			if ( !tmpNif->getMessages().isEmpty() )
-				throw FO76UtilsError( "error parsing NIF data" );
+				throw NifSkopeError( "error parsing NIF data" );
 
 			QCoreApplication::processEvents();
 			if ( dlg.result() == QDialog::Rejected )
@@ -1506,7 +1506,7 @@ bool NifSkope::batchProcessFiles(
 			if ( saveFlag ) {
 				QFile	f( fileName );
 				if ( !f.open( QIODeviceBase::WriteOnly ) )
-					throw FO76UtilsError( "error opening file" );
+					throw NifSkopeError( "error opening file" );
 				tmpNif->save( f );
 			}
 

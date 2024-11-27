@@ -395,7 +395,7 @@ QModelIndex spStarfieldMaterialSaveAs::cast( NifModel * nif, const QModelIndex &
 			if ( matFile.open( QIODevice::WriteOnly ) )
 				matFile.write( matFileData.c_str(), qsizetype( matFileData.length() ) );
 			else
-				throw FO76UtilsError( "could not open output file" );
+				throw NifSkopeError( "could not open output file" );
 		} catch ( std::exception& e ) {
 			QMessageBox::critical( nullptr, "NifSkope error", QString("Error exporting material '%1': %2" ).arg( materialPath ).arg( e.what() ) );
 		}
@@ -1253,7 +1253,7 @@ void spStarfieldEditedMaterialSaveAs::exportFO76Material( const NifModel * nif, 
 		if ( !matFilePath.isEmpty() ) {
 			QFile	matFile( matFilePath );
 			if ( !matFile.open( QIODeviceBase::WriteOnly ) )
-				throw FO76UtilsError( "Could not open output file" );
+				throw NifSkopeError( "Could not open output file" );
 			matFile.write( data );
 		}
 	} catch ( std::exception & e ) {

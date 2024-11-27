@@ -187,6 +187,7 @@ void drawRagdollCone( const Vector3 & pivot, const Vector3 & twist, const Vector
 void drawSphereSimple( const Vector3 & c, float r, int sd = 36 );
 void drawSphere( const Vector3 & c, float r, int sd = 8 );
 void drawCapsule( const Vector3 & a, const Vector3 & b, float r, int sd = 5 );
+void drawCylinder( const Vector3 & a, const Vector3 & b, float r, int sd = 5 );
 void drawDashLine( const Vector3 & a, const Vector3 & b, int sd = 15 );
 void drawConvexHull( const NifModel * nif, const QModelIndex & iShape, float scale, bool solid = false );
 void drawNiTSS( const NifModel * nif, const QModelIndex & iShape, bool solid = false );

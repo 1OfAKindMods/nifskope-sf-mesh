@@ -35,7 +35,7 @@ uniform float uvRotation;
 
 uniform vec4 falloffParams;
 
-uniform mat4 worldMatrix;
+varying mat3 reflMatrix;
 
 varying vec3 LightDir;
 varying vec3 ViewDir;
@@ -169,7 +169,7 @@ void main( void )
 		// Environment
 		if ( hasCubeMap && cubeMapScale > 0.0 ) {
 			vec3 R = reflect( -E, normal );
-			vec3 reflectedWS = vec3( worldMatrix * ( gl_ModelViewMatrixInverse * vec4( R, 0.0 ) ) );
+			vec3 reflectedWS = reflMatrix * R;
 			vec3 cube = textureCube( CubeMap, reflectedWS ).rgb;
 			if ( hasCubeMask )
 				cube *= texture2D( EnvironmentMap, offset ).r * cubeMapScale;

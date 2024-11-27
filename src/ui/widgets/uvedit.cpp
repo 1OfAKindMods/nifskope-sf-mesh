@@ -1842,7 +1842,7 @@ void UVWidget::exportSFMesh()
 		if ( ( meshBuf.getPosition() + ( numTexCoords * std::uint64_t(4) ) ) > meshBuf.size() )
 			return;
 		uvData = const_cast< unsigned char * >( meshBuf.getReadPtr() );
-	} catch ( FO76UtilsError & ) {
+	} catch ( NifSkopeError & ) {
 		return;
 	}
 

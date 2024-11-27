@@ -44,7 +44,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <algorithm>
 #include <functional>
 
-#include "libfo76utils/src/fp32vec4.hpp"
+#include "fp32vec4.hpp"
 #include "miniball/Seb.h"
 
 //! \file gltools.cpp GL helper functions
@@ -971,6 +971,56 @@ void drawCapsule( const Vector3 & a, const Vector3 & b, float r, int sd )
 
 		for ( int i = 0; i <= sd * 2; i++ )
 			glVertex( b + dj + x * sin( PI / sd * i ) * rj + y * cos( PI / sd * i ) * rj );
+
+		glEnd();
+	}
+}
+
+void drawCylinder( const Vector3 & a, const Vector3 & b, float r, int sd )
+{
+	Vector3 d = b - a;
+
+	if ( d.length() < 0.001 ) {
+		drawSphere( a, r );
+		return;
+	}
+
+	Vector3 n = d;
+	n.normalize();
+
+	Vector3 x( n[1], n[2], n[0] );
+	Vector3 y = Vector3::crossproduct( n, x );
+	x = Vector3::crossproduct( n, y );
+
+	x *= r;
+	y *= r;
+
+	glBegin( GL_LINE_STRIP );
+
+	for ( int i = 0; i <= sd * 2; i++ )
+		glVertex( a + d / 2 + x * std::sin( PI / sd * i ) + y * std::cos( PI / sd * i ) );
+
+	glEnd();
+	glBegin( GL_LINES );
+
+	for ( int i = 0; i <= sd * 2; i++ ) {
+		glVertex( a + x * std::sin( PI / sd * i ) + y * std::cos( PI / sd * i ) );
+		glVertex( b + x * std::sin( PI / sd * i ) + y * std::cos( PI / sd * i ) );
+	}
+
+	glEnd();
+
+	for ( int j = 0; j <= sd; j++ ) {
+		glBegin( GL_LINE_STRIP );
+
+		for ( int i = 0; i <= sd * 2; i++ )
+			glVertex( a + x * std::sin( PI / sd * i ) + y * std::cos( PI / sd * i ) );
+
+		glEnd();
+		glBegin( GL_LINE_STRIP );
+
+		for ( int i = 0; i <= sd * 2; i++ )
+			glVertex( b + x * std::sin( PI / sd * i ) + y * std::cos( PI / sd * i ) );
 
 		glEnd();
 	}

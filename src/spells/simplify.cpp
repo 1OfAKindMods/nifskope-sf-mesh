@@ -5,8 +5,8 @@
 #include <cfloat>
 #include <unordered_set>
 
-#include "libfo76utils/src/fp32vec4.hpp"
-#include "meshoptimizer/meshoptimizer.h"
+#include "fp32vec4.hpp"
+#include "meshoptimizer/src/meshoptimizer.h"
 
 // Brief description is deliberately not autolinked to class Spell
 /*! \file simplify.cpp

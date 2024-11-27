@@ -9,8 +9,9 @@
 
 #include "fp32vec4.hpp"
 #include "io/MeshFile.h"
-#include "meshoptimizer/meshoptimizer.h"
+#include "meshoptimizer/src/meshoptimizer.h"
 #include "meshlet.h"
+#include "ui/widgets/filebrowser.h"
 
 // Brief description is deliberately not autolinked to class Spell
 /*! \file mesh.cpp
@@ -1697,13 +1698,13 @@ void spGenerateMeshlets::updateMeshlets(
 			size_t	triangleCnt = size_t( meshFile.triangles.size() );
 			auto	iTriangles = nif->getIndex( iMeshData, "Triangles" );
 			if ( !iTriangles.isValid() || size_t( nif->rowCount( iTriangles ) ) != triangleCnt )
-				throw FO76UtilsError( "invalid triangle data" );
+				throw NifSkopeError( "invalid triangle data" );
 			if ( meshletAlgorithm < 4 ) {
 				std::vector< unsigned int >	indices( triangleCnt * 3 );
 				size_t	k = 0;
 				for ( const auto & t : meshFile.triangles ) {
 					if ( t[0] >= vertexCnt || t[1] >= vertexCnt || t[2] >= vertexCnt )
-						throw FO76UtilsError( "vertex number is out of range" );
+						throw NifSkopeError( "vertex number is out of range" );
 					indices[k] = t[0];
 					indices[k + 1] = t[1];
 					indices[k + 2] = t[2];
@@ -1744,7 +1745,7 @@ void spGenerateMeshlets::updateMeshlets(
 					for ( ; n; n--, k++, p = p + 3 ) {
 						auto	iTriangle = nif->getIndex( iTriangles, int(k) );
 						if ( !iTriangle.isValid() )
-							throw FO76UtilsError( "triangle number is out of range" );
+							throw NifSkopeError( "triangle number is out of range" );
 						quint16	v0 = quint16( v[p[0]] );
 						quint16	v1 = quint16( v[p[1]] );
 						quint16	v2 = quint16( v[p[2]] );
@@ -1759,7 +1760,7 @@ void spGenerateMeshlets::updateMeshlets(
 													meshFile.positions.data(), vertexCnt,
 													tmpMeshlets, newIndices, 96, 128 );
 				if ( err ) {
-					throw FO76UtilsError( err == ERANGE ? "vertex number is out of range"
+					throw NifSkopeError( err == ERANGE ? "vertex number is out of range"
 														: ( err == ENOMEM ? "std::bad_alloc" : "invalid argument" ) );
 				}
 				meshletData.resize( tmpMeshlets.size() );
@@ -1881,3 +1882,76 @@ QModelIndex spUpdateTrianglesFromSkin::cast( NifModel * nif, const QModelIndex &
 }
 
 REGISTER_SPELL( spUpdateTrianglesFromSkin )
+
+//! Selects a Starfield mesh filename
+class spChooseMeshFile final : public Spell
+{
+public:
+	QString name() const override final { return Spell::tr( "Choose" ); }
+	QString page() const override final { return Spell::tr( "Mesh" ); }
+	bool instant() const override final { return true; }
+
+	bool isApplicable( const NifModel * nif, const QModelIndex & idx ) override final
+	{
+		if ( !( nif && nif->getBSVersion() >= 170 && idx.isValid() ) )
+			return false;
+		const NifItem *	item = nif->getItem( idx );
+		if ( !item )
+			return false;
+		return ( item->hasName( "Mesh Path" ) && nif->blockInherits( item, "BSGeometry" ) );
+	}
+
+	static bool meshFileFilterFunc( [[maybe_unused]] void * p, const std::string_view & s )
+	{
+		if ( !( s.ends_with( ".mesh" ) && s.starts_with( "geometries/" ) ) )
+			return false;
+		// exclude SHA1 paths
+		if ( !( s.length() == 57 && s[31] == '/' ) )
+			return true;
+		for ( size_t i = 11; i < 52; i++ ) {
+			if ( i == 31 )
+				continue;
+			char	c = s[i];
+			if ( !( ( c >= '0' && c <= '9' ) || ( c >= 'a' && c <= 'f' ) ) )
+				return true;
+		}
+		return false;
+	}
+
+	QModelIndex cast( NifModel * nif, const QModelIndex & idx ) override final
+	{
+		std::set< std::string_view >	meshPaths;
+		nif->listResourceFiles( meshPaths, &meshFileFilterFunc );
+		if ( meshPaths.empty() )
+			return idx;
+
+		std::string	prvPath = Game::GameManager::get_full_path( nif->get<QString>( idx ), "geometries/", ".mesh" );
+		if ( meshPaths.find( prvPath ) == meshPaths.end() )
+			prvPath.clear();
+
+		QSettings	settings;
+		QString	key = QString( "%1/%2/%3/Last Mesh Path" ).arg( "Spells", page(), name() );
+		if ( prvPath.empty() )
+			prvPath = settings.value( key, QString() ).toString().toStdString();
+
+		FileBrowserWidget	fileBrowser( 800, 600, "Choose Mesh File", meshPaths, prvPath );
+		if ( fileBrowser.exec() == QDialog::Accepted ) {
+			const std::string_view *	s = fileBrowser.getItemSelected();
+			if ( s && !s->empty() ) {
+				QString	file = QString::fromUtf8( s->data(), qsizetype(s->length()) );
+				// save path for future
+				settings.setValue( key, QVariant( file ) );
+
+				nif->set<QString>( idx, file.replace( QChar('/'), QChar('\\') ) );
+
+				if ( *s != prvPath )
+					spUpdateBounds::cast_Starfield( nif, nif->getBlockIndex( idx ) );
+			}
+		}
+
+		return idx;
+	}
+};
+
+REGISTER_SPELL( spChooseMeshFile )
+

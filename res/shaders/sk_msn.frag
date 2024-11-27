@@ -37,7 +37,7 @@ uniform bool hasTintColor;
 uniform float lightingEffect1;
 uniform float lightingEffect2;
 
-uniform mat4 viewMatrix;
+uniform mat3 viewMatrix;
 
 varying vec3 v;
 
@@ -107,7 +107,7 @@ void main( void )
 
 	// Convert model space to view space
 	//	Swizzled G/B values!
-	normal = normalize( vec3( viewMatrix * vec4( normal.rbg, 0.0 )));
+	normal = normalize( viewMatrix * normal.rbg );
 
 	// Face Normals
 	//vec3 X = dFdx(v);

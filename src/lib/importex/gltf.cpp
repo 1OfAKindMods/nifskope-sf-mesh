@@ -634,7 +634,7 @@ DDSTexture16 * ExportGltfMaterials::loadTexture( const std::string_view & txtPat
 			return nullptr;
 		t = new DDSTexture16(
 				reinterpret_cast< const unsigned char * >( buf.constData() ), size_t( buf.size() ), mipLevel, true );
-	} catch ( FO76UtilsError & ) {
+	} catch ( NifSkopeError & ) {
 		delete t;
 		t = nullptr;
 	}
@@ -835,7 +835,7 @@ void ExportGltfMaterials::exportMaterial( tinygltf::Material & mat, const std::s
 	const CE2Material *	material = nullptr;
 	try {
 		material = materials->loadMaterial( matPath );
-	} catch ( FO76UtilsError & ) {
+	} catch ( NifSkopeError & ) {
 	}
 	if ( !material )
 		return;
@@ -982,10 +982,12 @@ protected:
 	const tinygltf::Model &	model;
 	NifModel *	nif;
 	bool	lodEnabled;
+	bool	scaleWarningFlag;
 	std::vector< int >	nodeStack;
 	bool nodeHasMeshes( const tinygltf::Node & node, int d = 0 ) const;
 	static void normalizeFloats( float * p, size_t n, int dataType );
 	template< typename T > bool loadBuffer( std::vector< T > & outBuf, int accessor, int typeRequired );
+	void applyXYZScale( Transform & t, const Vector3 & scale );
 	void loadSkin( const QPersistentModelIndex & index, const tinygltf::Skin & skin );
 	int loadTriangles( const QModelIndex & index, const tinygltf::Primitive & p );
 	void loadSkinnedLODMesh( const QPersistentModelIndex & index, const tinygltf::Primitive & p, int lod );
@@ -996,7 +998,7 @@ protected:
 	void loadNode( const QPersistentModelIndex & index, int nodeNum, bool isRoot );
 public:
 	ImportGltf( NifModel * nifModel, const tinygltf::Model & gltfModel, bool enableLOD )
-		: model( gltfModel ), nif( nifModel ), lodEnabled( enableLOD )
+		: model( gltfModel ), nif( nifModel ), lodEnabled( enableLOD ), scaleWarningFlag( false )
 	{
 	}
 	void importModel( const QPersistentModelIndex & iBlock );
@@ -1121,6 +1123,30 @@ template< typename T > bool ImportGltf::loadBuffer( std::vector< T > & outBuf, i
 	return true;
 }
 
+void ImportGltf::applyXYZScale( Transform & t, const Vector3 & scale )
+{
+	float	avgScale = ( scale[0] + scale[1] + scale[2] ) / 3.0f;
+	t.scale = avgScale;
+	FloatVector4	tmp = FloatVector4( scale ) / avgScale;
+	if ( ( ( ( tmp - 1.0f ).absValues() - 0.000001f ).getSignMask() & 0x07 ) == 0x07 )
+		return;
+	if ( !scaleWarningFlag ) {
+		scaleWarningFlag = true;
+		QMessageBox::warning( nullptr, "NifSkope warning",
+								tr( "glTF model uses anisotropic scaling, use Transform/Apply to fix transforms, "
+									"and recalculate normals and tangents" ) );
+	}
+	t.rotation( 0, 0 ) *= tmp[0];
+	t.rotation( 1, 0 ) *= tmp[0];
+	t.rotation( 2, 0 ) *= tmp[0];
+	t.rotation( 0, 1 ) *= tmp[1];
+	t.rotation( 1, 1 ) *= tmp[1];
+	t.rotation( 2, 1 ) *= tmp[1];
+	t.rotation( 0, 2 ) *= tmp[2];
+	t.rotation( 1, 2 ) *= tmp[2];
+	t.rotation( 2, 2 ) *= tmp[2];
+}
+
 void ImportGltf::loadSkin( const QPersistentModelIndex & index, const tinygltf::Skin & skin )
 {
 	QPersistentModelIndex	iSkinBMP = nif->insertNiBlock( "SkinAttach" );
@@ -1204,7 +1230,7 @@ void ImportGltf::loadSkin( const QPersistentModelIndex & index, const tinygltf::
 			Transform	t;
 			Vector3	tmpScale;
 			m.decompose( t.translation, t.rotation, tmpScale );
-			t.scale = ( tmpScale[0] + tmpScale[1] + tmpScale[2] ) / 3.0f;
+			applyXYZScale( t, tmpScale );
 			QModelIndex	iBone = nif->getIndex( iBones, int(i) );
 			if ( iBone.isValid() )
 				t.writeBack( nif, iBone );
@@ -1610,7 +1636,7 @@ void ImportGltf::loadNode( const QPersistentModelIndex & index, int nodeNum, boo
 				const_cast< float * >( m.data() )[i] = float( node.matrix[i] );
 			Vector3	tmpScale;
 			m.decompose( t.translation, t.rotation, tmpScale );
-			t.scale = ( tmpScale[0] + tmpScale[1] + tmpScale[2] ) / 3.0f;
+			applyXYZScale( t, tmpScale );
 		} else {
 			if ( node.rotation.size() >= 4 ) {
 				Quat	r;
@@ -1618,11 +1644,11 @@ void ImportGltf::loadNode( const QPersistentModelIndex & index, int nodeNum, boo
 					r[(i + 1) & 3] = float( node.rotation[i] );
 				t.rotation.fromQuat( r );
 			}
-			if ( node.scale.size() >= 1 ) {
-				double	s = 0.0;
-				for ( double i : node.scale )
-					s += i;
-				t.scale = float( s / double( int(node.scale.size()) ) );
+			if ( node.scale.size() >= 3 ) {
+				Vector3	tmpScale( float( node.scale[0] ), float( node.scale[1] ), float( node.scale[2] ) );
+				applyXYZScale( t, tmpScale );
+			} else if ( node.scale.size() >= 1 ) {
+				t.scale = float( node.scale[0] );
 			}
 			if ( node.translation.size() >= 3 ) {
 				t.translation[0] = float( node.translation[0] );

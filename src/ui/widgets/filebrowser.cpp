@@ -75,6 +75,8 @@ void FileBrowserWidget::updateTreeWidget()
 	}
 
 	std::map< std::string_view, QTreeWidgetItem * >	dirMap;
+	std::map< QTreeWidgetItem *, QList< QTreeWidgetItem * > >	dirChildren;
+	QTreeWidgetItem *	selectedItem = nullptr;
 	std::string_view	d;
 	for ( size_t i = 0; i < filesShown.size(); i++ ) {
 		const std::string_view &	fullPath( *(filesShown[i]) );
@@ -91,14 +93,22 @@ void FileBrowserWidget::updateTreeWidget()
 			parent = findDirectory( dirMap, d );
 		}
 		QTreeWidgetItem *	tmp;
-		if ( !parent )
+		if ( !parent ) {
 			tmp = new QTreeWidgetItem( treeWidget, int(i) );
-		else
-			tmp = new QTreeWidgetItem( parent, int(i) );
+		} else {
+			tmp = new QTreeWidgetItem( (QTreeWidgetItem *) nullptr, int(i) );
+			dirChildren[parent].append( tmp );
+		}
 		tmp->setText( 0, QString::fromUtf8( fullPath.data() + n, qsizetype(fullPath.length() - n) ) );
 		if ( i == size_t(curFileIndex) )
-			treeWidget->setCurrentItem( tmp );
+			selectedItem = tmp;
 	}
+
+	for ( auto i = dirChildren.begin(); i != dirChildren.end(); i++ )
+		i->first->addChildren( i->second );
+
+	if ( selectedItem )
+		treeWidget->setCurrentItem( selectedItem );
 }
 
 void FileBrowserWidget::checkItemActivated()

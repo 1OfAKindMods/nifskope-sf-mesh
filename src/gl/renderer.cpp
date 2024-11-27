@@ -1336,8 +1336,7 @@ bool Renderer::setupProgramCE2( const NifModel * nif, Program * prog, Shape * me
 
 	prog->uniSampler_l( prog->uniLocation("textureUnits"), 2, texunit - 2, TexCache::num_texture_units - 2 );
 
-	prog->uni4m( MAT_VIEW, mesh->viewTrans().toMatrix4() );
-	prog->uni4m( MAT_WORLD, mesh->worldTrans().toMatrix4() );
+	prog->uni3m( MAT_VIEW, scene->view.rotation );
 
 	QMapIterator<int, Program::CoordType> itx( prog->texcoords );
 
@@ -1486,8 +1485,6 @@ bool Renderer::setupProgramCE1( const NifModel * nif, Program * prog, Shape * me
 
 		prog->uni2f( UV_SCALE, lsp->uvScale.x, lsp->uvScale.y );
 		prog->uni2f( UV_OFFSET, lsp->uvOffset.x, lsp->uvOffset.y );
-
-		prog->uni4m( MAT_VIEW, mesh->viewTrans().toMatrix4() );
 
 		prog->uni1i( G2P_COLOR, lsp->greyscaleColor );
 		prog->uniSampler( bsprop, SAMP_GRAYSCALE, 3, texunit, "", TexClampMode::CLAMP_S_CLAMP_T );
@@ -1701,7 +1698,10 @@ bool Renderer::setupProgramCE1( const NifModel * nif, Program * prog, Shape * me
 		}
 	}
 
-	prog->uni4m( MAT_WORLD, mesh->worldTrans().toMatrix4() );
+	if ( nifVersion < 130 && prog->name == QLatin1StringView( "sk_msn.prog" ) )
+		prog->uni3m( MAT_VIEW, mesh->viewTrans().rotation );
+	else
+		prog->uni3m( MAT_VIEW, scene->view.rotation );
 
 	QMapIterator<int, Program::CoordType> itx( prog->texcoords );
 
@@ -2012,7 +2012,7 @@ bool Renderer::setupProgramFO3( const NifModel * nif, Program * prog, Shape * me
 	prog->uni1f( "uvRotation", uvCenterAndRotation[2] );
 	prog->uni4f_l( prog->uniLocation("falloffParams"), falloffParams );
 
-	prog->uni4m( MAT_WORLD, mesh->worldTrans().toMatrix4() );
+	prog->uni3m( MAT_VIEW, scene->view.rotation );
 
 	QMapIterator<int, Program::CoordType> itx( prog->texcoords );
 
@@ -2435,7 +2435,7 @@ void Renderer::drawSkyBox( Scene * scene )
 	prog->uni1b( "invertZAxis", ( bsVersion < 170 ) );
 	prog->uni1i( "skyCubeMipLevel", cfg.cubeBgndMipLevel );
 
-	prog->uni4m( MAT_VIEW, vt.toMatrix4() );
+	prog->uni3m( MAT_VIEW, vt.rotation );
 
 	glDisable( GL_BLEND );
 	glDisable( GL_ALPHA_TEST );

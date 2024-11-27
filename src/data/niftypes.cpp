@@ -390,7 +390,7 @@ void Matrix4::compose( const Vector3 & trans, const Matrix & rot, const Vector3 
 	}
 }
 
-bool gluInvertMatrix( const float m[16], float invOut[16] )
+static bool gluInvertMatrix( const float m[16], float invOut[16] )
 {
 	float inv[16], det;
 	int i;

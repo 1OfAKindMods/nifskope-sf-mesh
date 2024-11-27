@@ -226,7 +226,7 @@ in vec4 C;
 in vec4 D;
 
 in mat3 btnMatrix;
-in mat4 reflMatrix;
+in mat3 reflMatrix;
 
 out vec4 fragColor;
 
@@ -246,7 +246,7 @@ float emissiveIntensity( bool useAdaptive, bool adaptiveLimits, vec4 luminancePa
 	if ( useAdaptive ) {
 		l = dot( A.rgb * 20.0 + D.rgb * 80.0, vec3(0.2126, 0.7152, 0.0722) );
 		l = l * exp2( luminanceParams[1] );	// exposureOffset
-		if ( adaptiveLimits )	// maxOffsetEmittance, minOffsetEmittance
+		if ( adaptiveLimits )	// minOffsetEmittance, maxOffsetEmittance
 			l = clamp( l, luminanceParams[3], luminanceParams[2] );
 	}
 
@@ -259,7 +259,7 @@ float LightingFuncGGX_REF( float NdotH, float NdotL, float NdotV, float roughnes
 	// D (GGX normal distribution)
 	float alphaSqr = alpha * alpha;
 	float denom = NdotH * NdotH;
-	denom = ( denom * alphaSqr ) + max( 1.0 - denom, 0.0 );
+	denom = ( denom * alphaSqr ) + ( 1.0 - denom );
 	float D = alphaSqr / ( denom * denom * 4.0 );
 	// no pi because BRDF -> lighting
 	// G
@@ -616,19 +616,19 @@ void main()
 
 	float	NdotL = dot(normal, L);
 	float	NdotL0 = max(NdotL, 0.0);
-	float	NdotH = max(dot(normal, H), 0.0);
+	float	NdotH = clamp(dot(normal, H), 0.0, 1.0);
 	float	NdotV = abs(dot(normal, V));
 	float	LdotH = dot(L, H);
 
-	vec3	reflectedWS = vec3(reflMatrix * (gl_ModelViewMatrixInverse * vec4(R, 0.0)));
-	vec3	normalWS = vec3(reflMatrix * (gl_ModelViewMatrixInverse * vec4(normal, 0.0)));
+	vec3	reflectedWS = reflMatrix * R;
+	vec3	normalWS = reflMatrix * normal;
 
 	vec3	f0 = mix(vec3(0.04), baseMap, pbrMap.g);
 	vec3	albedo = baseMap * (1.0 - pbrMap.g);
 
 	// Specular
 	float	roughness = pbrMap.r;
-	vec3	spec = D.rgb * LightingFuncGGX_REF( NdotH, NdotL0, NdotV, max(roughness, 0.02) );
+	vec3	spec = D.rgb * LightingFuncGGX_REF( NdotH, NdotL0, NdotV, clamp(roughness, 0.045, 0.95) );
 
 	// Diffuse
 	vec3	diffuse = vec3(NdotL0);
