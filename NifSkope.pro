@@ -268,7 +268,6 @@ SOURCES += \
 	src/spells/animation.cpp \
 	src/spells/blocks.cpp \
 	src/spells/bounds.cpp \
-	src/spells/bulkopensave.cpp \
 	src/spells/color.cpp \
 	src/spells/fileextract.cpp \
 	src/spells/filerename.cpp \

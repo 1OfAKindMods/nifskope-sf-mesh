@@ -19,6 +19,8 @@
 /*! \file meshreplacebulk.cpp
  * \brief Spell to replace Starfield mesh paths from an oldpath:newpath file (spMeshUpdate)
  *
+ * This spell only remains relevant because of old, non-updated mods.
+ * Maybe time to clean it up for such?
  * All classes here inherit from the Spell class.
  */
 

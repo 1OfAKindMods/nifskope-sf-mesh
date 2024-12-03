@@ -20,6 +20,9 @@
 /*! \file meshreplace.cpp
  * \brief Spell to replace Starfield mesh paths from an oldpath:newpath file (spMeshUpdate)
  *
+ * This spell only remans relevant because of old, non-updated mods.
+ * Maybe time to clean it up for such?
+ * 
  * All classes here inherit from the Spell class.
  */
 
@@ -27,7 +30,7 @@
 class spMeshUpdate final : public Spell
 {
 public:
-	QString name() const override final { return Spell::tr( "Update to SF 1.11.33 Mesh Paths" ); }
+	QString name() const override final { return Spell::tr( "Update to SF >1.11.36 Mesh Paths" ); }
 	QString page() const override final { return Spell::tr( "" ); }
     QIcon icon() const override final
     {
