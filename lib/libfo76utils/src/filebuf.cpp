@@ -78,20 +78,9 @@ float FileBuffer::readFloat()
   if ((filePos + 4) > fileBufSize)
     errorMessage("end of input file");
   std::uint32_t tmp = readUInt32Fast();
-#if defined(__i386__) || defined(__x86_64__) || defined(__x86_64)
   if (!((tmp + 0x00800000U) & 0x7F000000U))
     return 0.0f;
   return std::bit_cast< float, std::uint32_t >(tmp);
-#else
-  int     e = int((tmp >> 23) & 0xFF);
-  if (e == 0x00 || e == 0xFF)
-    return 0.0f;
-  double  m = double(int((tmp & 0x007FFFFF) | 0x00800000));
-  m = std::ldexp(m, e - 150);
-  if (tmp & 0x80000000U)
-    m = -m;
-  return float(m);
-#endif
 }
 
 FloatVector4 FileBuffer::readFloatVector4()

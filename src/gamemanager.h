@@ -166,6 +166,7 @@ public:
 	static inline void update_status( const GameMode game, bool status );
 	static inline void update_status( const QString & game, bool status );
 	static inline void update_other_games_fallback( bool status );
+	static inline void update_ignore_archive_errors( bool status );
 
 	static void init_settings( int & manager_version, QProgressDialog * dlg = nullptr );
 	static void update_settings( int & manager_version, QProgressDialog * dlg = nullptr );
@@ -189,6 +190,7 @@ private:
 	static QString	gamePaths[NUM_GAMES];
 	static bool	gameStatus[NUM_GAMES];
 	static bool	otherGamesFallback;
+	static bool ignoreArchiveErrors;
 };
 
 inline GameManager::GameResources & GameManager::getNIFResources( const NifModel * nif )
@@ -257,6 +259,11 @@ void GameManager::update_status( const QString & game, bool status )
 void GameManager::update_other_games_fallback( bool status )
 {
 	otherGamesFallback = status;
+}
+
+void GameManager::update_ignore_archive_errors( bool status )
+{
+	ignoreArchiveErrors = status;
 }
 
 } // end namespace Game

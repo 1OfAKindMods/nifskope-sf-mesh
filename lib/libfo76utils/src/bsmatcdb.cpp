@@ -659,7 +659,6 @@ void BSMaterialsCDB::loadItem(
       static_cast< CDBObject_Float * >(o)->value = buf2.readFloat();
       break;
     case BSReflStream::String_Double:
-      // FIXME: implement this in a portable way
       static_cast< CDBObject_Double * >(o)->value =
           std::bit_cast< double, std::uint64_t >(buf2.readUInt64());
       break;

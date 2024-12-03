@@ -50,8 +50,8 @@ void main()
 	vec3	viewWS = reflMatrix * V;
 
 	float	m = clamp( float(skyCubeMipLevel), 0.0, 6.0 );
-	float	roughness = ( 5.0 - sqrt( 25.0 - 4.0 * m ) ) / 4.0;
-	vec3	color = D.rgb * LightingFuncGGX_REF( VdotL, max(roughness, 0.02) ) * VdotL0;
+	float	roughness = 1.0 - sqrt( clamp( 1.0 - m * 0.16666667, 0.0, 0.9604 ) );
+	vec3	color = D.rgb * LightingFuncGGX_REF( VdotL, roughness ) * VdotL0;
 
 	// Environment
 	vec3	ambient = A.rgb;

@@ -8,7 +8,7 @@
 
 const float SFCubeMapFilter::defaultRoughnessTable[7] =
 {
-  0.00000000f, 0.10435608f, 0.21922359f, 0.34861218f, 0.50000000f, 0.69098301f,
+  0.00000000f, 0.08712907f, 0.18350342f, 0.29289322f, 0.42264973f, 0.59175171f,
   1.00000000f
 };
 
@@ -60,14 +60,16 @@ void SFCubeMapFilter::processImage_Specular(
         FloatVector8  lDotR = (v1x * v2x) + (v1y * v2y) + (v1z * v2z);
         std::uint32_t signMask = lDotR.getSignMask();
         FloatVector8  v2w(j[3]);
+        // D denominator = (N·H * N·H * (a2 - 1.0) + 1.0)² * 4.0
+        //               = ((R·L + 1.0) * (a2 - 1.0) + 2.0)²
+        FloatVector8  d(lDotR);
+        d = d.absValues() * a2m1 + a2p1;
+        d = v2w / (d * d);
         if (signMask != 255U)
         {
-          FloatVector8  d(lDotR);       // face +X, +Y or +Z
-          d.maxValues(FloatVector8(0.0f));
-          FloatVector8  weight(d * v2w);
-          // D denominator = (N·H * N·H * (a2 - 1.0) + 1.0)² * 4.0
-          //               = ((R·L + 1.0) * (a2 - 1.0) + 2.0)²
-          weight *= (d * a2m1 + a2p1).rcpSqr();
+          FloatVector8  weight(lDotR);  // face +X, +Y or +Z
+          weight.maxValues(FloatVector8(0.0f));
+          weight *= d;
           c_r += (j[4] * weight);
           c_g += (j[5] * weight);
           c_b += (j[6] * weight);
@@ -76,10 +78,9 @@ void SFCubeMapFilter::processImage_Specular(
             continue;
         }
         {
-          FloatVector8  d(lDotR);       // face -X, -Y or -Z: invert dot product
-          d.minValues(FloatVector8(0.0f));
-          FloatVector8  weight(d * v2w);
-          weight *= (a2p1 - (d * a2m1)).rcpSqr();
+          FloatVector8  weight(lDotR);  // face -X, -Y or -Z: invert dot product
+          weight.minValues(FloatVector8(0.0f));
+          weight *= d;
           c_r -= (j[7] * weight);
           c_g -= (j[8] * weight);
           c_b -= (j[9] * weight);
@@ -519,8 +520,8 @@ void SFCubeMapCache::convertHDRToDDSThread(
   {
     int     n = yStart / cubeWidth;
     int     y = yStart % cubeWidth;
-    FloatVector4  xi_v(0.0f);
-    FloatVector4  yi_v(0.0f);
+    std::int32_t  xi_v[4];
+    std::int32_t  yi_v[4];
     FloatVector4  xf_v(0.0f);
     FloatVector4  yf_v(0.0f);
     for (int x = 0; x < cubeWidth; x++, p = p + outPixelSize)
@@ -546,13 +547,15 @@ void SFCubeMapCache::convertHDRToDDSThread(
         FloatVector4  xf = atan2NormFast(tmpX, tmpY) * 0.5f + 0.5f;
         xf = xf * float(w) - 0.5f;
         yf = yf * float(h) - 0.5f;
-        xi_v = FloatVector4(xf).floorValues();
-        yi_v = FloatVector4(yf).floorValues();
-        xf_v = xf - xi_v;
-        yf_v = yf - yi_v;
+        FloatVector4  xi = FloatVector4(xf).floorValues();
+        FloatVector4  yi = FloatVector4(yf).floorValues();
+        xi.convertToInt32(xi_v);
+        yi.convertToInt32(yi_v);
+        xf_v = xf - xi;
+        yf_v = yf - yi;
       }
-      int     x0 = int(xi_v[x & 3]);
-      int     y0 = int(yi_v[x & 3]);
+      int     x0 = xi_v[x & 3];
+      int     y0 = yi_v[x & 3];
       float   xf = xf_v[x & 3];
       float   yf = yf_v[x & 3];
       x0 = (x0 <= (w - 1) ? (x0 >= 0 ? x0 : (w - 1)) : 0);

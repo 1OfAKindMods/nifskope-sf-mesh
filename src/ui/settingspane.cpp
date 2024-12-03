@@ -523,6 +523,7 @@ SettingsResources::SettingsResources( QWidget * parent ) :
 	connect( ui->foldersList, &QListView::doubleClicked, this, &SettingsPane::modifyPane );
 	connect( ui->chkAlternateExt, &QCheckBox::clicked, this, &SettingsPane::modifyPane );
 	connect( ui->chkOtherGamesFallback, &QCheckBox::clicked, this, &SettingsPane::modifyPane );
+	connect( ui->chkIgnoreArchiveErrors, &QCheckBox::clicked, this, &SettingsPane::modifyPane );
 
 	// Move Up / Move Down Behavior
 	connect( ui->foldersList->selectionModel(), &QItemSelectionModel::currentChanged,
@@ -557,6 +558,7 @@ void SettingsResources::read()
 
 	ui->chkAlternateExt->setChecked( settings.value( "Settings/Resources/Alternate Extensions", false ).toBool() );
 	ui->chkOtherGamesFallback->setChecked( settings.value("Settings/Resources/Other Games Fallback", false ).toBool() );
+	ui->chkIgnoreArchiveErrors->setChecked( settings.value("Settings/Resources/Ignore Archive Errors", false ).toBool() );
 
 	setModified( false );
 }
@@ -693,6 +695,7 @@ void SettingsResources::modifyPane()
 {
 	GameManager::update_folders( currentFolderItem(), folders->stringList() );
 	GameManager::update_other_games_fallback( ui->chkOtherGamesFallback->isChecked() );
+	GameManager::update_ignore_archive_errors( ui->chkIgnoreArchiveErrors->isChecked() );
 	SettingsPane::modifyPane();
 }
 

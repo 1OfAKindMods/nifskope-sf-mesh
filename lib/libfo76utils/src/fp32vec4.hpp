@@ -76,6 +76,8 @@ struct FloatVector4
                       const std::uint32_t *p1_3, const std::uint32_t *p2_3,
                       float xf, float yf, bool isSRGB = false);
   static inline FloatVector4 convertInt16(const std::uint64_t& n);
+  static inline FloatVector4 convertInt32(const std::int32_t *p);
+  inline void convertToInt32(std::int32_t *p);
   // if noInfNaN is true, Inf and NaN values are never returned
   static inline FloatVector4 convertFloat16(std::uint64_t n,
                                             bool noInfNaN = false);

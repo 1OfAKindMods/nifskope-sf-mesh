@@ -79,6 +79,7 @@ std::unordered_map< const NifModel *, GameManager::GameResources * >	GameManager
 QString	GameManager::gamePaths[NUM_GAMES];
 bool	GameManager::gameStatus[NUM_GAMES] = { true, true, true, true, true, true, true, true, true };
 bool	GameManager::otherGamesFallback = false;
+bool	GameManager::ignoreArchiveErrors = false;
 
 static bool archiveFilterFunction_1( [[maybe_unused]] void * p, const std::string_view & s )
 {
@@ -195,7 +196,8 @@ void GameManager::GameResources::init_archives()
 		try {
 			ba2File->loadArchivePath( i.toStdString().c_str(), archiveFilterFuncTable[game] );
 		} catch ( NifSkopeError & e ) {
-			QMessageBox::critical( nullptr, "NifSkope error", QString("Error opening resource path '%1': %2").arg(i).arg(e.what()) );
+			if ( !ignoreArchiveErrors )
+				QMessageBox::critical( nullptr, "NifSkope error", QString("Error opening resource path '%1': %2").arg(i).arg(e.what()) );
 		}
 	}
 }
@@ -781,6 +783,7 @@ void GameManager::save()
 	settings.setValue( GAME_FOLDERS, folders );
 	settings.setValue( GAME_STATUS, status );
 	settings.setValue( "Settings/Resources/Other Games Fallback", QVariant(otherGamesFallback) );
+	settings.setValue( "Settings/Resources/Ignore Archive Errors", QVariant(ignoreArchiveErrors) );
 }
 
 void GameManager::load()
@@ -790,10 +793,12 @@ void GameManager::load()
 	auto	folders = settings.value(GAME_FOLDERS).toMap();
 	auto	status = settings.value(GAME_STATUS).toMap();
 	bool	useOther = settings.value( "Settings/Resources/Other Games Fallback", false ).toBool();
+	bool	disableErrors = settings.value( "Settings/Resources/Ignore Archive Errors", false ).toBool();
 
 	clear();
 
 	otherGamesFallback = useOther;
+	ignoreArchiveErrors = disableErrors;
 	for ( auto i = paths.constBegin(); i != paths.constEnd(); i++ )
 		insert_game( ModeForString( i.key() ), i.value().toString() );
 	for ( auto i = folders.constBegin(); i != folders.constEnd(); i++ )
@@ -810,6 +815,7 @@ void GameManager::clear()
 		gameStatus[i] = true;
 	}
 	otherGamesFallback = false;
+	ignoreArchiveErrors = false;
 }
 
 void GameManager::insert_game( const GameMode game, const QString & path )

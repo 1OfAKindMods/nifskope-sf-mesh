@@ -64,6 +64,19 @@ inline FloatVector4 FloatVector4::convertInt16(const std::uint64_t& n)
                       float(std::int16_t((n >> 48) & 0xFFFFU)));
 }
 
+inline FloatVector4 FloatVector4::convertInt32(const std::int32_t *p)
+{
+  return FloatVector4(float(p[0]), float(p[1]), float(p[2]), float(p[3]));
+}
+
+inline void FloatVector4::convertToInt32(std::int32_t *p)
+{
+  p[0] = std::int32_t(roundFloat(v[0]));
+  p[1] = std::int32_t(roundFloat(v[1]));
+  p[2] = std::int32_t(roundFloat(v[2]));
+  p[3] = std::int32_t(roundFloat(v[3]));
+}
+
 inline FloatVector4 FloatVector4::convertFloat16(std::uint64_t n, bool noInfNaN)
 {
   (void) noInfNaN;

@@ -324,7 +324,7 @@ inline FloatVector8& FloatVector8::absValues()
     0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF,
     0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF, 0x7FFFFFFF
   };
-  __asm__ ("vandps %t1, %t0, %t0" : "+x" (v) : "xm" (m));
+  __asm__ ("vandps %t1, %t0, %t0" : "+x" (v) : "x" (m));
   return (*this);
 }
 

@@ -846,6 +846,13 @@
              </property>
             </widget>
            </item>
+           <item>
+            <widget class="QCheckBox" name="chkIgnoreArchiveErrors">
+             <property name="text">
+              <string>Ignore errors on opening archives and data folders</string>
+             </property>
+            </widget>
+           </item>
           </layout>
          </widget>
         </widget>
@@ -962,21 +969,21 @@
              <item>
               <widget class="QPushButton" name="btnFolderRemove">
                <property name="text">
-                <string>Remove Path</string>
+                <string>Remo&amp;ve Path</string>
                </property>
               </widget>
              </item>
              <item>
               <widget class="QPushButton" name="btnFolderUp">
                <property name="text">
-                <string>Move Up</string>
+                <string>Mov&amp;e Up</string>
                </property>
               </widget>
              </item>
              <item>
               <widget class="QPushButton" name="btnFolderDown">
                <property name="text">
-                <string>Move Down</string>
+                <string>Move &amp;Down</string>
                </property>
               </widget>
              </item>

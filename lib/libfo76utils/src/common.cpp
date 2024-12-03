@@ -57,7 +57,6 @@ NifSkopeError::~NifSkopeError() noexcept
 #if ENABLE_X86_64_SIMD < 3
 std::uint16_t convertToFloat16(float x)
 {
-#  if defined(__i386__) || defined(__x86_64__) || defined(__x86_64)
   std::uint32_t n = std::bit_cast< std::uint32_t >(x);
   std::uint32_t s = (n & 0x80000000U) >> 16;
   n = n & 0x7FFFFFFFU;
@@ -66,21 +65,9 @@ std::uint16_t convertToFloat16(float x)
     x = std::bit_cast< float >(n);
     return std::uint16_t(std::uint32_t(roundFloat(x * float(1 << 24))) | s);
   }
-  n = (n - 0x37FFF000U) >> 13;
+  n = (n + ((n & 0x00002000U) >> 13) - 0x37FFF001U) >> 13;
   n = (n < 0x7FFFU ? n : 0x7FFFU);
   return std::uint16_t(n | s);
-#  else
-  int     e = 0;
-  int     m = roundFloat(float(std::frexp(x, &e)) * 2048.0f);
-  if (!m)
-    return 0;
-  int     s = m & 0x8000;
-  m = std::abs(m);
-  e = e + 14 + (m >> 11);
-  if (e <= 0 || e > 31)
-    return std::uint16_t(s | (e <= 0 ? 0x0000 : 0x7FFF));
-  return std::uint16_t(s | (e << 10) | (m & 0x03FF));
-#  endif
 }
 #endif
 
