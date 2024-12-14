@@ -19,37 +19,11 @@ defineReplace(getSed) {
 	sedbin = ""
 
 	win32 {
-		PROG = C:/Program Files (x86)
-		!exists($$PROG) {
-			PROG = C:/Program Files
-		}
-
-		GNUWIN32 = $${PROG}/GnuWin32/bin
-		CYGWIN = C:/cygwin64/bin
-		MSYS64 = C:/msys64/usr/bin
-		SEDPATH = /sed.exe
-
-		exists($${MSYS64}$${SEDPATH}) {
-			sedbin = $${MSYS64}$${QMAKE_DIR_SEP}
-		} else:exists($${GNUWIN32}$${SEDPATH}) {
-			sedbin = $${GNUWIN32}$${QMAKE_DIR_SEP}
-		} else:exists($${CYGWIN}$${SEDPATH}) {
-			sedbin = $${CYGWIN}$${QMAKE_DIR_SEP}
-		} else {
-			#message(Neither GnuWin32 or Cygwin were found)
-			SEDSYS = $$system(where sed 2> NUL)
-			SEDLIST = $$split(SEDSYS, "sed.exe")
-			SEDBIN = $$member(SEDLIST, 0)
-			sedbin = $$syspath($${SEDBIN})
-		}
-
-		!isEmpty(sedbin) {
-			sedbin = \"$${sedbin}sed.exe\"
-		}
+		sedbin = "sed.exe"
 	}
 
 	unix {
-		sedbin = sed
+		sedbin = "sed"
 	}
 
 	return($$sedbin)

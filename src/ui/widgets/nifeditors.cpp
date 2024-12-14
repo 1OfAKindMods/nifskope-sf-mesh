@@ -228,6 +228,9 @@ NifFloatEdit::NifFloatEdit( NifModel * n, const QModelIndex & index, float min, 
 	getLayout()->addWidget( spinbox = new QDoubleSpinBox() );
 	spinbox->setRange( min, max );
 	spinbox->setDecimals( 4 );
+	spinbox->setStepType( QAbstractSpinBox::AdaptiveDecimalStepType );
+	spinbox->setAccelerated( true );
+	spinbox->setKeyboardTracking( false );
 	// Cast QDoubleSpinBox slot
 	auto dsbValueChanged = static_cast<void (QDoubleSpinBox::*)(double)>(&QDoubleSpinBox::valueChanged);
 
@@ -306,8 +309,9 @@ NifVectorEdit::NifVectorEdit( NifModel * n, const QModelIndex & index )
 	: NifEditBox( n, index )
 {
 	getLayout()->addWidget( vector = new VectorEdit() );
-	if ( n && n->getBSVersion() >= 170 )
-		vector->setStepSize( 0.02 );
+	vector->setStepSize( n && n->getBSVersion() >= 170 ? 0.005 : 0.25 );
+	vector->setAccelerated( true );
+	vector->setKeyboardTracking( false );
 	connect( vector, &VectorEdit::sigEdited, this, &NifVectorEdit::sltApplyData );
 }
 

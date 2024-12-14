@@ -751,10 +751,35 @@ Vector2 VectorEdit::getVector2() const
 
 void VectorEdit::setStepSize( double n )
 {
+	bool	isAdaptive = !( n > 0.0 );
+	QAbstractSpinBox::StepType	stepType = ( isAdaptive ? QAbstractSpinBox::AdaptiveDecimalStepType
+														: QAbstractSpinBox::DefaultStepType );
+	x->setStepType( stepType );
+	y->setStepType( stepType );
+	z->setStepType( stepType );
+	w->setStepType( stepType );
+	if ( isAdaptive )
+		return;
 	x->setSingleStep( n );
 	y->setSingleStep( n );
 	z->setSingleStep( n );
 	w->setSingleStep( n );
+}
+
+void VectorEdit::setAccelerated( bool n )
+{
+	x->setAccelerated( n );
+	y->setAccelerated( n );
+	z->setAccelerated( n );
+	w->setAccelerated( n );
+}
+
+void VectorEdit::setKeyboardTracking( bool n )
+{
+	x->setKeyboardTracking( n );
+	y->setKeyboardTracking( n );
+	z->setKeyboardTracking( n );
+	w->setKeyboardTracking( n );
 }
 
 
@@ -777,6 +802,8 @@ RotationEdit::RotationEdit( QWidget * parent ) : ValueEdit( parent ), mode( mAut
 	for ( int x = 0; x < 4; x++ ) {
 		lay->addWidget( l[x] = new CenterLabel, 1 );
 		lay->addWidget( v[x] = new QDoubleSpinBox, 5 );
+		v[x]->setAccelerated( true );
+		v[x]->setKeyboardTracking( false );
 		connect( v[x], dsbValueChanged, this, &RotationEdit::sltChanged );
 	}
 
@@ -812,7 +839,7 @@ void RotationEdit::setupMode()
 				l[x]->setText( labs.value( x ) );
 				v[x]->setDecimals( ROTATION_COARSE );
 				v[x]->setRange( -360, +360 );
-				v[x]->setSingleStep( 1 );
+				v[x]->setSingleStep( 0.2 );
 				l[x]->setHidden( x == 3 );
 				v[x]->setHidden( x == 3 );
 			}
@@ -829,11 +856,11 @@ void RotationEdit::setupMode()
 				if ( x == 0 ) {
 					v[x]->setDecimals( ROTATION_COARSE );
 					v[x]->setRange( -360, +360 );
-					v[x]->setSingleStep( 1 );
+					v[x]->setSingleStep( 0.2 );
 				} else {
 					v[x]->setDecimals( ROTATION_FINE );
 					v[x]->setRange( -1.0, +1.0 );
-					v[x]->setSingleStep( 0.1 );
+					v[x]->setSingleStep( 0.02 );
 				}
 
 				l[x]->setHidden( false );

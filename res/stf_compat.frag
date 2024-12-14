@@ -638,7 +638,7 @@ void main()
 	vec3	refl = vec3(0.0);
 	vec3	ambient = A.rgb;
 	if ( hasCubeMap ) {
-		float	m = roughness * (roughness * -6.0 + 12.0);
+		float	m = roughness * (roughness * -4.0 + 10.0);
 		refl = textureCubeLod(CubeMap, reflectedWS, max(m, 0.0)).rgb;
 		refl *= ambient;
 		ambient *= textureCubeLod(CubeMap2, normalWS, 0.0).rgb;

@@ -161,7 +161,7 @@ void main( void )
 
 	// Environment
 	if ( hasCubeMap ) {
-		float	m = roughness * (roughness * -6.0 + 12.0);
+		float	m = roughness * (roughness * -4.0 + 10.0);
 		vec3	cube = textureCubeLod( CubeMap, reflectedWS, max(m, 0.0) ).rgb;
 		cube *= envReflection * g;
 		cube = mix( cube, cube * D.rgb, lightingInfluence );
