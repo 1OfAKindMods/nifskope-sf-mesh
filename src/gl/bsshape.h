@@ -26,8 +26,9 @@ public:
 
 	// Shape
 
-	void drawVerts() const override;
+	void drawVerts() const;
 	QModelIndex vertexAt( int ) const override;
+	void updateLodLevel() override;
 
 protected:
 	BoundSphere dataBound;

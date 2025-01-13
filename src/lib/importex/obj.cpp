@@ -1101,13 +1101,13 @@ void importObjMain( NifModel * nif, const QModelIndex & index, bool collision )
 				nif->updateArraySize( iData, "Normals" );
 				nif->setArray<Vector3>( iData, "Normals", norms );
 				// the following fields are version dependent
-				for ( auto i = nif->getItem( iData, "Has UV" ); i; i = nullptr )
+				if ( auto i = nif->getItem( iData, "Has UV" ); i )
 					nif->set<int>( i, 1 );
-				for ( auto i = nif->getItem( iData, "Num UV Sets" ); i; i = nullptr )
+				if ( auto i = nif->getItem( iData, "Num UV Sets" ); i )
 					nif->set<int>( i, 1 );
-				for ( auto i = nif->getItem( iData, "Data Flags" ); i; i = nullptr )
+				if ( auto i = nif->getItem( iData, "Data Flags" ); i )
 					nif->set<int>( i, 4097 );
-				for ( auto i = nif->getItem( iData, "BS Data Flags" ); i; i = nullptr )
+				if ( auto i = nif->getItem( iData, "BS Data Flags" ); i )
 					nif->set<int>( i, 4097 );
 
 				if ( nif->getBSVersion() > 34 ) {
@@ -1217,7 +1217,7 @@ void importObjMain( NifModel * nif, const QModelIndex & index, bool collision )
 			bounds.update( nif, iData );
 
 			// do not stitch, because it looks better in the cs
-			QVector<QVector<quint16> > strips = stripify( triangles );
+			QVector<QVector<quint16> > strips = stripify( triangles, false );
 
 			nif->set<int>( iData, "Num Strips", strips.count() );
 			nif->set<int>( iData, "Has Points", 1 );

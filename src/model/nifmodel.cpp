@@ -46,6 +46,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <QFileInfo>
 #include <QSettings>
 #include <QStringBuilder>
+#include <cctype>
 
 //! @file nifmodel.cpp The NIF data model.
 
@@ -667,21 +668,21 @@ bool NifModel::updateByteArraySize( NifItem * array )
 {
 	// TODO (Gavrant): I don't understand what's going on here, rewrite the function
 
-	int nNewSize = evalArraySize( array );
-	int nOldRows = array->childCount();
-	if ( nNewSize == 0 )
+	qsizetype nNewSize = evalArraySize( array );
+	if ( nNewSize < 0 )
 		return false;
 
 	// Create byte array for holding blob data
 	QByteArray bytes;
-	bytes.resize( nNewSize );
 
 	// Previous row count
+	int nOldRows = array->childCount();
 
 	// Grab data from existing rows if appropriate and then purge
-	if ( nOldRows > 1 ) {
+	if ( nOldRows > 1 || ( nOldRows == 1 && array->child( 0 ) && !array->child( 0 )->isBinary() ) ) {
+		bytes.resize( nOldRows );
 		for ( int i = 0; i < nOldRows; i++ ) {
-			if ( NifItem * child = array->child( 0 ) ) {
+			if ( NifItem * child = array->child( i ) ) {
 				bytes[i] = get<quint8>( child );
 			}
 		}
@@ -694,7 +695,7 @@ bool NifModel::updateByteArraySize( NifItem * array )
 	}
 
 	// Create the dummy row for holding the byte array
-	if ( nOldRows == 0 ) {
+	if ( nOldRows < 1 ) {
 		NifData data( array->name(), array->strType(), array->templ(), NifValue( NifValue::tBlob ), addConditionParentPrefix( array->arg() ) );
 		data.setBinary( true );
 
@@ -708,11 +709,16 @@ bool NifModel::updateByteArraySize( NifItem * array )
 	if ( NifItem * child = array->child( 0 ) ) {
 		QByteArray * bm = child->isBinary() ? get<QByteArray *>( child ) : nullptr;
 		if ( !bm ) {
+			if ( nNewSize > bytes.size() )
+				bytes.append( nNewSize - bytes.size(), 0 );
 			set<QByteArray>( child, bytes );
-		} else if ( bm->size() == 0 ) {
-			*bm = bytes;
-		} else {
-			bm->resize( nNewSize );
+		} else if ( qsizetype oldSize = bm->size(); oldSize != nNewSize ) {
+			if ( bm->isEmpty() )
+				*bm = bytes;
+			if ( nNewSize > oldSize )
+				bm->append( nNewSize - oldSize, 0 );
+			else
+				bm->resize( nNewSize );
 		}
 	}
 
@@ -1528,6 +1534,8 @@ QVariant NifModel::data( const QModelIndex & index, int role ) const
 			// TODO: checkbox, "show invalid only"
 			if ( column == ValueCol && item->isTriangle() ) {
 				const NifItem * nv = findItemX( item, "Num Vertices" );
+				if ( !nv )
+					nv = findItemX( item, "Num Verts" );
 
 				if ( !nv ) {
 					qDebug() << "Num Vertices is null";
@@ -1786,34 +1794,36 @@ bool NifModel::setHeaderString( const QString & s, uint ver )
 
 static QString getNIFDataPath( const char * pathName )
 {
-	std::string	tmpPath( pathName ? pathName : "" );
+	std::string_view	tmpPath( pathName ? pathName : "" );
 	while ( !tmpPath.empty() ) {
 		std::uint32_t	extStr = 0U;
 		if ( tmpPath.length() > 4 ) {
-			extStr = FileBuffer::readUInt32Fast( tmpPath.c_str() + (tmpPath.length() - 4) );
+			extStr = FileBuffer::readUInt32Fast( tmpPath.data() + (tmpPath.length() - 4) );
 			extStr = extStr | ((extStr >> 1) & 0x20202020U);
 		}
-		if ( FileBuffer::checkType( extStr, ".nif" ) ) {
+		if ( FileBuffer::checkType( extStr, ".nif" )
+			|| FileBuffer::checkType( extStr, ".bto" ) || FileBuffer::checkType( extStr, ".btr" ) ) {
 			size_t	n1 = tmpPath.rfind('/');
-			size_t	n2 = tmpPath.rfind('\\');
-			if ( n1 == std::string::npos )
+			if ( n1 == std::string_view::npos )
 				n1 = 0;
-			if ( n2 == std::string::npos )
+#if defined(_WIN32) || defined(_WIN64)
+			size_t	n2 = tmpPath.rfind('\\');
+			if ( n2 == std::string_view::npos )
 				n2 = 0;
 			n1 = std::max( n1, n2 );
-#if defined(_WIN32) || defined(_WIN64)
 			// do not remove slash from after drive letter and :
-			if ( n1 == 2 && tmpPath[1] == ':' && ( (unsigned int) std::uint8_t(tmpPath[0] | 0x20) - 0x61U ) < 0x1AU )
+			if ( n1 == 2 && tmpPath[1] == ':' && std::isalpha( (unsigned char) tmpPath[0] ) )
 				n1++;
 #endif
-			tmpPath.resize( n1 );
+			tmpPath = tmpPath.substr( 0, n1 );
 			continue;
 		}
-		if ( FileBuffer::checkType( extStr, ".ba2" ) || FileBuffer::checkType( extStr, ".bsa" ) )
-			break;
-		QString	dataPath = QString::fromStdString( tmpPath );
-		if ( QFileInfo( dataPath ).isDir() )
-			return dataPath;
+		if ( !( FileBuffer::checkType( extStr, ".ba2" ) || FileBuffer::checkType( extStr, ".bsa" ) ) ) {
+			QString	dataPath = QString::fromUtf8( tmpPath.data(), qsizetype( tmpPath.length() ) );
+			if ( QFileInfo( dataPath ).isDir() )
+				return dataPath;
+		}
+		break;
 	}
 	return QString();
 }

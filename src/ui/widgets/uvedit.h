@@ -45,6 +45,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 class NifModel;
+class NifSkopeOpenGLContext;
 class TexCache;
 
 class QActionGroup;
@@ -201,6 +202,7 @@ private:
 		{
 		}
 	};
+	NifSkopeOpenGLContext * cx;
 	TexCache * textures;
 	QVector<TextureInfo>	texfiles;
 	QModelIndex texsource;

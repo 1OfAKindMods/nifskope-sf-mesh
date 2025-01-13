@@ -38,7 +38,7 @@ public:
 
 	// Shape
 
-	void drawVerts() const override;
+	void drawVerts() const;
 	QModelIndex vertexAt(int) const override;
 
 	QVector<std::shared_ptr<MeshFile>> meshes;
@@ -58,7 +58,6 @@ public:
 	QVector<BoneWeightsUNorm> weightsUNORM;
 	QVector<QVector<Triangle>> gpuLODs;
 	QVector<QString> boneNames;
-	QVector<Transform> boneTransforms;
 
 protected:
 	void updateImpl(const NifModel* nif, const QModelIndex& index) override;

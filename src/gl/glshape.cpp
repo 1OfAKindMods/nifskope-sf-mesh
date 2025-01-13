@@ -36,6 +36,8 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "gl/glscene.h"
 #include "model/nifmodel.h"
 #include "io/material.h"
+#include "gl/renderer.h"
+#include "glview.h"
 
 #include <QDebug>
 #include <QElapsedTimer>
@@ -49,16 +51,11 @@ void Shape::clear()
 {
 	Node::clear();
 
+	clearHash();
+
 	resetSkinning();
 	resetVertexData();
 	resetSkeletonData();
-
-	transVerts.clear();
-	transNorms.clear();
-	transColors.clear();
-	transTangents.clear();
-	transBitangents.clear();
-	sortedTriangles.clear();
 
 	bssp = nullptr;
 	bslsp = nullptr;
@@ -76,14 +73,9 @@ void Shape::transform()
 
 		auto nif = NifModel::fromValidIndex( iBlock );
 		if ( nif ) {
+			clearHash();
 			needUpdateBounds = true; // Force update bounds
 			updateData(nif);
-
-			if ( isVertexAlphaAnimation ) {
-				int nColors = colors.count();
-				for ( int i = 0; i < nColors; i++ )
-					colors[i].setRGBA( colors[i].red(), colors[i].green(), colors[i].blue(), 1 );
-			}
 		} else {
 			clear();
 			return;
@@ -91,6 +83,271 @@ void Shape::transform()
 	}
 
 	Node::transform();
+}
+
+void Shape::updateBoneTransforms()
+{
+	qsizetype	numBones = boneData.size();
+	if ( numBones < 1 ) {
+		transformRigid = true;
+		return;
+	}
+	boneTransforms.fill( FloatVector4( 0.0f ), numBones * 3 );
+	transformRigid = false;
+
+	Node * root = findParent( skeletonRoot );
+
+	boundSphere = BoundSphere();
+
+	for ( qsizetype i = 0; i < numBones; i++ ) {
+		const BoneData &	bw = boneData.at( i );
+		Node * bone = root ? root->findChild( bw.bone ) : nullptr;
+		Transform	t = skeletonTrans;
+		if ( bone )
+			t = t * bone->localTrans( skeletonRoot );
+		boundSphere |= BoundSphere( t * bw.center, t.scale * bw.radius );
+		t = t * bw.trans;
+
+		FloatVector4 *	bt = boneTransforms.data() + ( i * 3 );
+		bt[0] = FloatVector4::convertVector3( t.rotation.data() ) * t.scale;
+		bt[0][3] = t.translation[0];
+		bt[1] = FloatVector4::convertVector3( t.rotation.data() + 3 ) * t.scale;
+		bt[1][3] = t.translation[1];
+		bt[2] = FloatVector4::convertVector3( t.rotation.data() + 6 ) * t.scale;
+		bt[2][3] = t.translation[2];
+	}
+
+#if 0
+	// precise bounding sphere calculation using transformed vertex positions
+	QVector< Vector3 >	transVerts = verts;
+	Vector3 *	p = transVerts.data();
+	qsizetype	numVerts = transVerts.size();
+	int	numWeights = ( boneWeights1.size() < numVerts ? 4 : 8 );
+	for ( qsizetype i = 0; i < numVerts; i++ ) {
+		FloatVector4	v = FloatVector4::convertVector3( &( p[i][0] ) );
+		v[3] = 1.0f;
+		const float *	wp = &( boneWeights0.at( i )[0] );
+		FloatVector4	xTmp( 0.0f );
+		FloatVector4	yTmp( 0.0f );
+		FloatVector4	zTmp( 0.0f );
+		float	wSum = 0.0f;
+		for ( int j = 0; j < numWeights; j++, wp++ ) {
+			if ( j == 4 )
+				wp = &( boneWeights1.at( i )[0] );
+			float	w = *wp;
+			if ( !( w > 0.0f ) )
+				break;
+			int	b = int( w );
+			if ( b < 0 || b >= numBones ) [[unlikely]]
+				continue;
+			w -= float( b );
+			const FloatVector4 *	bt = boneTransforms.constData() + ( b * 3 );
+			FloatVector4	vTmp = v * w;
+			xTmp += vTmp * bt[0];
+			yTmp += vTmp * bt[1];
+			zTmp += vTmp * bt[2];
+			wSum += w;
+		}
+		if ( wSum > 0.0f ) {
+			FloatVector4	wSumInv( 1.0f / wSum );
+			p[i][0] = xTmp.dotProduct( wSumInv );
+			p[i][1] = yTmp.dotProduct( wSumInv );
+			p[i][2] = zTmp.dotProduct( wSumInv );
+		}
+	}
+
+	boundSphere = BoundSphere( transVerts );
+#endif
+
+	boundSphere.applyInv( worldTrans() );
+	needUpdateBounds = false;
+}
+
+void Shape::convertTriangleStrip( const void * indicesData, size_t numIndices )
+{
+	qsizetype	numTriangles = 0;
+	const quint16 *	indices = nullptr;
+	if ( numIndices >= 3 && indicesData ) {
+		indices = reinterpret_cast< const quint16 * >( indicesData );
+		for ( size_t i = 2; i < numIndices; i++ ) {
+			if ( indices[i - 2] != indices[i - 1] && indices[i - 2] != indices[i] && indices[i - 1] != indices[i] )
+				numTriangles++;
+		}
+	}
+	qsizetype	j = triangles.size();
+	triangles.resize( j + numTriangles );
+	tristripOffsets.append( std::pair< qsizetype, qsizetype >( j, numTriangles ) );
+	Triangle *	triangleData = triangles.data();
+	for ( size_t i = 2; i < numIndices && j < triangles.size(); i++ ) {
+		if ( indices[i - 2] != indices[i - 1] && indices[i - 2] != indices[i] && indices[i - 1] != indices[i] ) {
+			if ( !( i & 1 ) )
+				triangleData[j] = Triangle( indices[i - 2], indices[i - 1], indices[i] );
+			else
+				triangleData[j] = Triangle( indices[i - 2], indices[i], indices[i - 1] );
+			j++;
+		}
+	}
+}
+
+void Shape::removeInvalidIndices()
+{
+	qsizetype	numVerts = verts.size();
+	qsizetype	numTriangles = triangles.size();
+	// validate triangles' vertex indices, throw out triangles with the wrong ones
+	for ( qsizetype i = 0; i < numTriangles; i++ ) {
+		const Triangle &	t = triangles.at( i );
+		qsizetype	maxVertex = std::max( t[0], std::max( t[1], t[2] ) );
+		if ( maxVertex < numVerts ) [[likely]]
+			continue;
+		auto	minVertex = std::min( t[0], std::min( t[1], t[2] ) );
+		if ( qsizetype( minVertex ) >= numVerts )
+			minVertex = 0;
+		Triangle &	tmp = triangles[i];
+		if ( qsizetype( tmp[0] ) >= numVerts )
+			tmp[0] = minVertex;
+		if ( qsizetype( tmp[1] ) >= numVerts )
+			tmp[1] = minVertex;
+		if ( qsizetype( tmp[2] ) >= numVerts )
+			tmp[2] = minVertex;
+	}
+}
+
+void Shape::drawVerts( float pointSize, int vertexSelected ) const
+{
+	auto	prog = scene->useProgram( "selection.prog" );
+	if ( !prog )
+		return;
+	auto	context = scene->renderer;
+	setUniforms( prog );
+
+	int	selectionFlags = 0x0002;
+	int	selectionParam = vertexSelected;
+
+	glEnable( GL_POLYGON_OFFSET_POINT );
+	glPolygonOffset( 0.0f, -100.0f );
+
+	if ( scene->selecting ) {
+		selectionFlags = selectionFlags | 0x0001;
+		selectionParam = shapeNumber << 16;
+		glDisable( GL_BLEND );
+	} else {
+		pointSize += 0.5f;
+		glNormalColor();
+		selectionFlags = selectionFlags | ( roundFloat( std::min( std::max( pointSize * 8.0f, 0.0f ), 255.0f ) ) << 8 );
+		if ( vertexSelected >= 0 )
+			prog->uni4f( "highlightColor", scene->highlightColor );
+		glEnable( GL_BLEND );
+		context->fn->glBlendFuncSeparate( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA );
+	}
+	glPointSize( pointSize );
+	prog->uni1i( "selectionFlags", selectionFlags );
+	prog->uni1i( "selectionParam", selectionParam );
+
+	qsizetype	numVerts = verts.size();
+	context->fn->glDrawArrays( GL_POINTS, 0, GLsizei( numVerts ) );
+	if ( !scene->selecting && vertexSelected >= 0 && vertexSelected < numVerts ) {
+		pointSize = GLView::Settings::vertexPointSizeSelected + 0.5f;
+		glPointSize( pointSize );
+		selectionFlags = ( roundFloat( std::min( std::max( pointSize * 8.0f, 0.0f ), 255.0f ) ) << 8 ) | 0x0002;
+		prog->uni1i( "selectionFlags", selectionFlags );
+		context->fn->glDrawArrays( GL_POINTS, GLint( vertexSelected ), 1 );
+	}
+
+	glDisable( GL_POLYGON_OFFSET_POINT );
+	prog->uni1i( "selectionFlags", 0 );
+}
+
+void Shape::drawNormals( int btnMask, int vertexSelected, float lineLength ) const
+{
+	if ( scene->selecting || !( btnMask & 7 ) )
+		return;
+	auto	prog = scene->useProgram( "normals.prog" );
+	if ( !prog )
+		return;
+	auto	context = scene->renderer;
+	setUniforms( prog );
+
+	prog->uni1i( "btnSelection", ( !( btnMask & 4 ) ? ( !( btnMask & 1 ) ? 1 : 0 ) : 2 ) );
+	prog->uni1f( "normalLineLength", lineLength );
+	prog->uni1f( "lineWidth", GLView::Settings::lineWidthWireframe * 0.78125f );
+	glNormalColor();
+	if ( vertexSelected >= 0 )
+		prog->uni4f( "highlightColor", scene->highlightColor );
+	prog->uni1i( "selectionParam", vertexSelected );
+
+	glEnable( GL_BLEND );
+	context->fn->glBlendFuncSeparate( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA );
+
+	qsizetype	numVerts = verts.size();
+	context->fn->glDrawArrays( GL_POINTS, 0, GLsizei( numVerts ) );
+	if ( vertexSelected >= 0 && vertexSelected < numVerts ) {
+		prog->uni1f( "lineWidth", GLView::Settings::lineWidthHighlight * 1.2f );
+		glDepthFunc( GL_ALWAYS );
+		context->fn->glDrawArrays( GL_POINTS, GLint( vertexSelected ), 1 );
+		if ( ( btnMask & 7 ) == 3 ) {
+			prog->uni1i( "btnSelection", 1 );
+			// yellow -> cyan (2, 1, 0, 3)
+			prog->uni4f( "highlightColor", FloatVector4( scene->highlightColor ).shuffleValues( 0xC6 ) );
+			context->fn->glDrawArrays( GL_POINTS, GLint( vertexSelected ), 1 );
+		}
+		glDepthFunc( GL_LEQUAL );
+	}
+}
+
+void Shape::drawWireframe( FloatVector4 color ) const
+{
+	auto	context = scene->renderer;
+	qsizetype	n = std::min< qsizetype >( lodTriangleCount, triangles.size() );
+	if ( !context || n < 1 )
+		return;
+	auto	prog = context->useProgram( "wireframe.prog" );
+	if ( !prog )
+		return;
+
+	setUniforms( prog );
+	prog->uni4f( "vertexColorOverride", FloatVector4( 1.0e-15f ).maxValues( color ) );
+	prog->uni1i( "selectionParam", -1 );
+	prog->uni1f( "lineWidth", GLView::Settings::lineWidthWireframe );
+
+	context->fn->glDrawElements( GL_TRIANGLES, GLsizei( n * 3 ), GL_UNSIGNED_SHORT, (void *) 0 );
+}
+
+void Shape::drawTriangles( qsizetype i, qsizetype n, FloatVector4 color ) const
+{
+	if ( i < 0 ) {
+		n += i;
+		i = 0;
+	}
+	auto	context = scene->renderer;
+	if ( !context || n < 1 || i >= triangles.size() )
+		return;
+	n = std::min< qsizetype >( n, triangles.size() - i );
+	auto	prog = context->useProgram( "selection.prog" );
+	if ( !prog )
+		return;
+
+	setUniforms( prog );
+	prog->uni4f( "vertexColorOverride", FloatVector4( 1.0e-15f ).maxValues( color ) );
+	prog->uni1i( "selectionFlags", 0 );
+	prog->uni1i( "selectionParam", -1 );
+
+	context->fn->glDrawElements( GL_TRIANGLES, GLsizei( n * 3 ), GL_UNSIGNED_SHORT, (void *) ( i * 6 ) );
+}
+
+void Shape::drawBoundingSphere( const BoundSphere & sph, FloatVector4 color ) const
+{
+	scene->setGLColor( color );
+	scene->setGLLineWidth( GLView::Settings::lineWidthWireframe );
+	scene->loadModelViewMatrix( viewTrans() );
+	scene->drawSphereSimple( sph.center, sph.radius, 72, 4 );
+}
+
+void Shape::drawBoundingBox( const Vector3 & boundsCenter, const Vector3 & boundsDims, FloatVector4 color ) const
+{
+	scene->setGLColor( color );
+	scene->setGLLineWidth( GLView::Settings::lineWidthWireframe );
+	scene->loadModelViewMatrix( viewTrans() );
+	scene->drawBox( boundsCenter - boundsDims, boundsCenter + boundsDims );
 }
 
 void Shape::setController( const NifModel * nif, const QModelIndex & iController )
@@ -112,7 +369,7 @@ void Shape::updateImpl( const NifModel * nif, const QModelIndex & index )
 	Node::updateImpl( nif, index );
 
 	if ( index == iBlock ) {
-		shader = ""; // Reset stored shader so it can reassess conditions
+		shader = nullptr;	// Reset stored shader so it can reassess conditions
 
 		bslsp = nullptr;
 		bsesp = nullptr;
@@ -147,14 +404,15 @@ void Shape::boneSphere( const NifModel * nif, const QModelIndex & index ) const
 		return;
 
 	Transform boneT = Transform( nif, index );
-	Transform t = scene->hasOption(Scene::DoSkinning) ? viewTrans() : Transform();
-	t = t * skeletonTrans * bone->localTrans( 0 ) * boneT;
+	Transform t = bone->localTrans( 0 ) * boneT;
 
 	auto bSphere = BoundSphere( nif, index );
 	if ( bSphere.radius > 0.0 ) {
-		glColor4f( 1, 1, 1, 0.33f );
 		auto pos = boneT.rotation.inverted() * (bSphere.center - boneT.translation);
-		drawSphereSimple( t * pos, bSphere.radius, 36 );
+		scene->setGLColor( 1.0f, 1.0f, 1.0f, 0.33f );
+		scene->setGLLineWidth( GLView::Settings::lineWidthWireframe );
+		scene->loadModelViewMatrix( viewTrans().toMatrix4() * skeletonTrans * t );
+		scene->drawSphereSimple( pos, bSphere.radius, 36 );
 	}
 }
 
@@ -166,18 +424,17 @@ void Shape::resetSkinning()
 
 void Shape::resetVertexData()
 {
-	numVerts = 0;
-
 	iData = iTangentData = QModelIndex();
 
 	verts.clear();
 	norms.clear();
 	colors.clear();
-	coords.clear();
 	tangents.clear();
 	bitangents.clear();
+	coords.clear();
 	triangles.clear();
-	tristrips.clear();
+	lodTriangleCount = 0;
+	tristripOffsets.clear();
 }
 
 void Shape::resetSkeletonData()
@@ -185,8 +442,12 @@ void Shape::resetSkeletonData()
 	skeletonRoot = 0;
 	skeletonTrans = Transform();
 
+	boneTransforms.clear();
+	boneWeights0.clear();
+	boneWeights1.clear();
+
 	bones.clear();
-	weights.clear();
+	boneData.clear();
 	partitions.clear();
 }
 
@@ -228,4 +489,103 @@ void Shape::updateShader()
 		isDoubleSided = false;
 		isVertexAlphaAnimation = false;
 	}
+}
+
+void Shape::setUniforms( NifSkopeOpenGLContext::Program * prog ) const
+{
+	if ( !prog ) [[unlikely]]
+		return;
+
+	const Transform &	t = viewTrans();
+	const Transform *	v = &( scene->view );
+	const Transform *	m = &t;
+	unsigned int	nifVersion = 0;
+	if ( scene->nifModel ) [[likely]]
+		nifVersion = scene->nifModel->getBSVersion();
+
+	qsizetype	numBones = 0;
+	if ( nifVersion < 170 ) {
+		// TODO: Starfield skinning is not implemented
+		if ( !transformRigid )
+			numBones = std::min< qsizetype >( boneTransforms.size() / 3, qsizetype( prog->maxNumBones ) );
+		prog->uni1i( "numBones", int( numBones ) );
+	}
+
+	if ( numBones > 0 ) {
+		int	l = prog->uniLocation( "boneTransforms" );
+		if ( l >= 0 )
+			prog->f->glUniformMatrix3x4fv( l, GLsizei( numBones ), GL_FALSE, &( boneTransforms.constFirst()[0] ) );
+		m = v;
+	}
+
+	if ( nifVersion < 130 && prog->name == "sk_msn.prog" ) [[unlikely]]
+		v = &t;
+	prog->uni3m( "viewMatrix", v->rotation );
+	prog->uni3m( "normalMatrix", m->rotation );
+	prog->uni4m( "modelViewMatrix", m->toMatrix4() );
+}
+
+bool Shape::bindShape() const
+{
+	NifSkopeOpenGLContext *	context = scene->renderer;
+	if ( !context ) [[unlikely]]
+		return false;
+
+	qsizetype	numVerts = verts.size();
+	qsizetype	numTriangles = triangles.size();
+	if ( !( numVerts > 0 && numTriangles > 0 ) ) [[unlikely]]
+		return false;
+
+	const float *	vertexAttrs[16];
+	vertexAttrs[0] = &( verts.constFirst()[0] );
+	std::uint64_t	attrModeMask = 3U;
+
+	if ( colors.size() >= numVerts ) {
+		vertexAttrs[1] = &( colors.constFirst()[0] );
+		attrModeMask |= 0x00000040ULL;
+	}
+
+	if ( norms.size() >= numVerts ) [[likely]] {
+		vertexAttrs[2] = &( norms.constFirst()[0] );
+		attrModeMask |= 0x00000300ULL;
+	}
+	if ( tangents.size() >= numVerts ) [[likely]] {
+		vertexAttrs[3] = &( tangents.constFirst()[0] );
+		attrModeMask |= 0x00003000ULL;
+	}
+	if ( bitangents.size() >= numVerts ) [[likely]] {
+		vertexAttrs[4] = &( bitangents.constFirst()[0] );
+		attrModeMask |= 0x00030000ULL;
+	}
+
+	if ( boneWeights0.size() >= numVerts ) [[unlikely]] {
+		vertexAttrs[5] = &( boneWeights0.constFirst()[0] );
+		attrModeMask |= 0x00400000ULL;
+	}
+	if ( boneWeights1.size() >= numVerts ) [[unlikely]] {
+		vertexAttrs[6] = &( boneWeights1.constFirst()[0] );
+		attrModeMask |= 0x04000000ULL;
+	}
+
+	unsigned char	numUVs = (unsigned char) std::min< qsizetype >( std::max< qsizetype >( coords.size(), 0 ), 9 );
+	std::uint64_t	tmp = 0;
+	for ( unsigned char i = numUVs; i-- > 0; ) {
+		tmp = tmp << 4;
+		const auto &	c = coords.at( i );
+		if ( c.size() >= numVerts ) [[likely]] {
+			vertexAttrs[i + 7] = &( c.constFirst()[0] );
+			tmp |= 0x20000000ULL;
+		}
+	}
+	attrModeMask |= tmp;
+
+	size_t	elementDataSize = size_t( numTriangles ) * sizeof( Triangle );
+	if ( !( dataHash.attrMask && numVerts == dataHash.numVerts && elementDataSize == dataHash.elementBytes ) ) {
+		dataHash = NifSkopeOpenGLContext::ShapeDataHash( std::uint32_t( numVerts ), attrModeMask, elementDataSize,
+															vertexAttrs, triangles.constData() );
+	}
+
+	context->bindShape( dataHash, vertexAttrs, triangles.constData() );
+
+	return true;
 }

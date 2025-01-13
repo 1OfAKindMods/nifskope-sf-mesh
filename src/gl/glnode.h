@@ -96,8 +96,6 @@ class Node : public IControllable
 public:
 	Node( Scene * scene, const QModelIndex & iBlock );
 
-	static int SELECTING;
-
 	int id() const { return nodeId; }
 
 	// IControllable
@@ -143,17 +141,24 @@ public:
 
 	Controller * findController( const QString & proptype, const QModelIndex & index );
 
-public slots:
-	void updateSettings();
-
 protected:
 	void setController( const NifModel * nif, const QModelIndex & controller ) override;
 	void updateImpl( const NifModel * nif, const QModelIndex & block ) override;
+
+	void setGLColor( FloatVector4 c ) const;
 
 	// Old Options API
 	//	TODO: Move away from the GL-like naming
 	void glHighlightColor() const;
 	void glNormalColor() const;
+
+	void drawVertexSelection( QVector<Vector3> & verts, int i );
+	void drawTriangleSelection( QVector<Vector3> const & verts, Triangle const & tri );
+	void drawTriangleIndex( QVector<Vector3> const & verts, Triangle const & tri, int index );
+	void drawHvkShape( const NifModel * nif, const QModelIndex & iShape, QStack<QModelIndex> & stack,
+						Scene * scene, FloatVector4 origin_color4fv, const Matrix4 & parentTransform );
+	void drawHvkConstraint( const NifModel * nif, const QModelIndex & iConstraint, Scene * scene );
+	void drawFurnitureMarker( const NifModel * nif, const QModelIndex & iPosition );
 
 	QPointer<Node> parent;
 	NodeList children;
@@ -163,13 +168,6 @@ protected:
 	Transform local;
 
 	NodeFlags flags;
-
-	struct Settings
-	{
-		QColor highlight;
-		QColor wireframe;
-	} cfg;
-
 
 	bool presorted = false;
 

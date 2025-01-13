@@ -1,51 +1,50 @@
-#version 120
+#version 410 core
 
-varying vec3 LightDir;
-varying vec3 ViewDir;
+out vec3 LightDir;
+out vec3 ViewDir;
 
-varying vec4 C;
+out vec2 texCoord;
 
-varying vec3 N;
-varying vec3 t;
-varying vec3 b;
-varying vec3 v;
+out vec3 N;
 
-// FIXME: these uniforms are never set
-uniform bool isGPUSkinned;
-uniform mat4 boneTransforms[100];
+out vec4 C;
 
-void main( void )
+uniform mat3 normalMatrix;
+uniform mat4 modelViewMatrix;
+uniform mat4 projectionMatrix;
+uniform vec4 lightSourcePosition[3];	// W0 = environment map rotation (-1.0 to 1.0), W1, W2 = viewport X, Y
+uniform vec4 lightSourceDiffuse[3];		// A0 = overall brightness, A1, A2 = viewport width, height
+uniform vec4 lightSourceAmbient;		// A = tone mapping control (1.0 = full tone mapping)
+
+uniform vec4 vertexColorOverride;	// components greater than zero replace the vertex color
+
+layout ( location = 0 ) in vec3	vertexPosition;
+layout ( location = 1 ) in vec4	vertexColor;
+layout ( location = 2 ) in vec3	normalVector;
+layout ( location = 7 ) in vec2	multiTexCoord0;
+
+#define BT_NO_TANGENTS 1
+#include "bonetransform.glsl"
+
+void main()
 {
-	gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;
-	gl_TexCoord[0] = gl_MultiTexCoord0;
-	
-	if ( !isGPUSkinned ) {
-		N = normalize(gl_NormalMatrix * gl_Normal);
-		t = normalize(gl_NormalMatrix * gl_MultiTexCoord1.xyz);
-		b = normalize(gl_NormalMatrix * gl_MultiTexCoord2.xyz);
-		v = vec3(gl_ModelViewMatrix * gl_Vertex);
-	} else {
-		mat4 bt = boneTransforms[int(gl_MultiTexCoord3[0])] * gl_MultiTexCoord4[0];
-		bt += boneTransforms[int(gl_MultiTexCoord3[1])] * gl_MultiTexCoord4[1];
-		bt += boneTransforms[int(gl_MultiTexCoord3[2])] * gl_MultiTexCoord4[2];
-		bt += boneTransforms[int(gl_MultiTexCoord3[3])] * gl_MultiTexCoord4[3];
+	vec4	v = vec4( vertexPosition, 1.0 );
+	vec3	n = normalVector;
 
-		vec4 V = bt * gl_Vertex;
-		vec3 normal = vec3(bt * vec4(gl_Normal, 0.0));
-		vec3 tan = vec3(bt * vec4(gl_MultiTexCoord1.xyz, 0.0));
-		vec3 bit = vec3(bt * vec4(gl_MultiTexCoord2.xyz, 0.0));
+	if ( numBones > 0 )
+		boneTransform( v, n );
 
-		gl_Position = gl_ModelViewProjectionMatrix * V;
-		N = normalize(gl_NormalMatrix * normal);
-		t = normalize(gl_NormalMatrix * tan);
-		b = normalize(gl_NormalMatrix * bit);
-		v = vec3(gl_ModelViewMatrix * V);
-	}
+	v = modelViewMatrix * v;
+	gl_Position = projectionMatrix * v;
+	texCoord = multiTexCoord0;
 
-	if (gl_ProjectionMatrix[3][3] == 1.0)
-		v = vec3(0.0, 0.0, -1.0);	// orthographic view
-	ViewDir = -v.xyz;
-	LightDir = gl_LightSource[0].position.xyz;
-	
-	C = gl_Color;
+	N = normalize( n * normalMatrix );
+
+	if ( projectionMatrix[3][3] == 1.0 )
+		ViewDir = vec3(0.0, 0.0, 1.0);	// orthographic view
+	else
+		ViewDir = -v.xyz;
+	LightDir = lightSourcePosition[0].xyz;
+
+	C = mix( vertexColor, vertexColorOverride, greaterThan( vertexColorOverride, vec4( 0.0 ) ) );
 }

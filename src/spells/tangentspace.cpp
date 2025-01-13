@@ -414,24 +414,18 @@ void spTangentSpace::tangentSpaceSFMesh( NifModel * nif, const QModelIndex & ind
 	for ( const auto & n : normals ) {
 		// for each vertex calculate tangent and binormal
 		qsizetype	i = qsizetype( &n - normals.constData() );
-		FloatVector4	normal( &(n[0]) );
-		FloatVector4	tangent( &(tangents.at(i)[0]) );
-		FloatVector4	bitangent( bitangents.at(i) );
+		FloatVector4	normal = FloatVector4::convertVector3( &(n[0]) );
+		FloatVector4	tangent = FloatVector4::convertVector3( &(tangents.at(i)[0]) );
+		FloatVector4	bitangent = FloatVector4::convertVector3( &(bitangents.at(i)[0]) );
 
-		float	r = tangent.dotProduct3( tangent );
-		if ( r > 0.0f ) {
-			tangent /= float( std::sqrt( r ) );
-			tangent -= normal * normal.dotProduct3( tangent );
-			r = tangent.dotProduct3( tangent );
-		}
-		if ( !( r > 0.0f ) ) [[unlikely]] {
+		normal.normalize();
+		tangent -= normal * normal.dotProduct3( tangent );
+		if ( !( tangent.dotProduct3( tangent ) > 0.0f ) ) [[unlikely]] {
 			tangent = normal.crossProduct3( ( normal[2] * normal[2] ) > 0.5f ?
 											FloatVector4( 0.0f, -1.0f, 0.0f, 0.0f )
 											: FloatVector4( 0.0f, 0.0f, -1.0f, 0.0f ) );
-			r = tangent.dotProduct3( tangent );
 		}
-		if ( r > 0.0f )
-			tangent /= float( std::sqrt( r ) );
+		tangent.normalize();
 
 		tangent[3] = ( normal.crossProduct3( tangent ).dotProduct3( bitangent ) > 0.0f ? 1.0f : -1.0f );
 

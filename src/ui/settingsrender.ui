@@ -112,26 +112,6 @@
             </property>
             <layout class="QFormLayout" name="formLayout_2">
              <item row="0" column="0">
-              <widget class="QLabel" name="lblUseShaders">
-               <property name="text">
-                <string>Use Shaders</string>
-               </property>
-               <property name="buddy">
-                <cstring>useShaders</cstring>
-               </property>
-              </widget>
-             </item>
-             <item row="0" column="1">
-              <widget class="QCheckBox" name="useShaders">
-               <property name="text">
-                <string/>
-               </property>
-               <property name="checked">
-                <bool>true</bool>
-               </property>
-              </widget>
-             </item>
-             <item row="1" column="0">
               <widget class="QLabel" name="lblAA">
                <property name="text">
                 <string>Antialiasing</string>
@@ -141,8 +121,8 @@
                </property>
               </widget>
              </item>
-             <item row="1" column="1">
-              <widget class="QComboBox" name="antialiasing">
+             <item row="0" column="1">
+              <widget class="QComboBox" name="msaaSamples">
                <property name="maximumSize">
                 <size>
                  <width>60</width>
@@ -150,7 +130,7 @@
                 </size>
                </property>
                <property name="currentIndex">
-                <number>4</number>
+                <number>2</number>
                </property>
                <item>
                 <property name="text">
@@ -179,27 +159,20 @@
                </item>
               </widget>
              </item>
+             <item row="1" column="0" colspan="2">
+              <widget class="QPushButton" name="btnDetectMSAA">
+               <property name="maximumSize">
+                <size>
+                 <width>180</width>
+                 <height>26</height>
+                </size>
+               </property>
+               <property name="text">
+                <string>Detect MSAA Supported</string>
+               </property>
+              </widget>
+             </item>
              <item row="2" column="0">
-              <widget class="QLabel" name="lblDisableMSAALimit">
-               <property name="text">
-                <string>Allow >4x AA on Linux</string>
-               </property>
-               <property name="buddy">
-                <cstring>disableMSAALimit</cstring>
-               </property>
-              </widget>
-             </item>
-             <item row="2" column="1">
-              <widget class="QCheckBox" name="disableMSAALimit">
-               <property name="text">
-                <string/>
-               </property>
-               <property name="checked">
-                <bool>false</bool>
-               </property>
-              </widget>
-             </item>
-             <item row="3" column="0">
               <widget class="QLabel" name="lblAF">
                <property name="text">
                 <string>Anisotropic Filtering</string>
@@ -209,7 +182,7 @@
                </property>
               </widget>
              </item>
-             <item row="3" column="1">
+             <item row="2" column="1">
               <widget class="QComboBox" name="anisotropicFiltering">
                <property name="maximumSize">
                 <size>
@@ -247,7 +220,7 @@
                </item>
               </widget>
              </item>
-             <item row="4" column="0" colspan="2">
+             <item row="3" column="0" colspan="2">
               <spacer name="horizontalSpacer">
                <property name="orientation">
                 <enum>Qt::Horizontal</enum>
@@ -263,7 +236,49 @@
                </property>
               </spacer>
              </item>
-             <item row="5" column="0">
+             <item row="4" column="0">
+              <widget class="QLabel" name="lblMeshCache">
+               <property name="text">
+                <string>Geometry Cache Size</string>
+               </property>
+               <property name="buddy">
+                <cstring>meshCacheSize</cstring>
+               </property>
+              </widget>
+             </item>
+             <item row="4" column="1">
+              <widget class="QSpinBox" name="meshCacheSize">
+               <property name="minimum">
+                <number>8</number>
+               </property>
+               <property name="maximum">
+                <number>1024</number>
+               </property>
+               <property name="singleStep">
+                <number>8</number>
+               </property>
+               <property name="value">
+                <number>128</number>
+               </property>
+              </widget>
+             </item>
+             <item row="5" column="0" colspan="2">
+              <spacer name="horizontalSpacer_2">
+               <property name="orientation">
+                <enum>Qt::Horizontal</enum>
+               </property>
+               <property name="sizeType">
+                <enum>QSizePolicy::Expanding</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>0</width>
+                 <height>20</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+             <item row="6" column="0">
               <widget class="QLabel" name="lblSFParallaxScale">
                <property name="text">
                 <string>Starfield POM Scale</string>
@@ -273,7 +288,7 @@
                </property>
               </widget>
              </item>
-             <item row="5" column="1">
+             <item row="6" column="1">
               <widget class="QDoubleSpinBox" name="sfParallaxScale">
                <property name="decimals">
                 <number>3</number>
@@ -292,7 +307,7 @@
                </property>
               </widget>
              </item>
-             <item row="6" column="0">
+             <item row="7" column="0">
               <widget class="QLabel" name="lblSFParallaxOffset">
                <property name="text">
                 <string>Starfield POM Offset</string>
@@ -302,7 +317,7 @@
                </property>
               </widget>
              </item>
-             <item row="6" column="1">
+             <item row="7" column="1">
               <widget class="QDoubleSpinBox" name="sfParallaxOffset">
                <property name="decimals">
                 <number>2</number>
@@ -321,7 +336,7 @@
                </property>
               </widget>
              </item>
-             <item row="7" column="0">
+             <item row="8" column="0">
               <widget class="QLabel" name="lblSFParallaxSteps">
                <property name="text">
                 <string>Starfield POM Steps</string>
@@ -331,7 +346,7 @@
                </property>
               </widget>
              </item>
-             <item row="7" column="1">
+             <item row="8" column="1">
               <widget class="QSpinBox" name="sfParallaxSteps">
                <property name="minimum">
                 <number>16</number>
@@ -401,7 +416,7 @@
            </widget>
           </item>
           <item>
-           <spacer name="horizontalSpacer_2">
+           <spacer name="horizontalSpacer_3">
             <property name="orientation">
              <enum>Qt::Horizontal</enum>
             </property>
@@ -934,7 +949,7 @@
               </widget>
              </item>
              <item row="4" column="0" colspan="4">
-              <spacer name="horizontalSpacer_3">
+              <spacer name="horizontalSpacer_4">
                <property name="orientation">
                 <enum>Qt::Horizontal</enum>
                </property>
@@ -1066,8 +1081,18 @@
        <string>Colors</string>
       </attribute>
       <layout class="QGridLayout" name="gridLayout_3">
-       <item row="2" column="1">
-        <widget class="ColorLineEdit" name="highlight" native="true">
+       <item row="0" column="1">
+        <widget class="ColorLineEdit" name="background" native="true">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+           <horstretch>0</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+        </widget>
+       </item>
+       <item row="0" column="3">
+        <widget class="ColorLineEdit" name="wireframe" native="true">
          <property name="sizePolicy">
           <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
            <horstretch>0</horstretch>
@@ -1082,8 +1107,11 @@
        <item row="1" column="3">
         <widget class="ColorWheel" name="colorWireframe" native="true"/>
        </item>
-       <item row="0" column="3">
-        <widget class="ColorLineEdit" name="wireframe" native="true">
+       <item row="1" column="4">
+        <layout class="QHBoxLayout" name="layAlphaWire"/>
+       </item>
+       <item row="2" column="1">
+        <widget class="ColorLineEdit" name="highlight" native="true">
          <property name="sizePolicy">
           <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
            <horstretch>0</horstretch>
@@ -1092,8 +1120,8 @@
          </property>
         </widget>
        </item>
-       <item row="0" column="1">
-        <widget class="ColorLineEdit" name="background" native="true">
+       <item row="2" column="3">
+        <widget class="ColorLineEdit" name="gridColor" native="true">
          <property name="sizePolicy">
           <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
            <horstretch>0</horstretch>
@@ -1105,11 +1133,14 @@
        <item row="3" column="1">
         <widget class="ColorWheel" name="colorHighlight" native="true"/>
        </item>
-       <item row="1" column="4">
-        <layout class="QHBoxLayout" name="layAlphaWire"/>
-       </item>
        <item row="3" column="2">
         <layout class="QHBoxLayout" name="layAlphaHigh"/>
+       </item>
+       <item row="3" column="3">
+        <widget class="ColorWheel" name="colorGrid" native="true"/>
+       </item>
+       <item row="3" column="4">
+        <layout class="QHBoxLayout" name="layAlphaGrid"/>
        </item>
       </layout>
      </widget>

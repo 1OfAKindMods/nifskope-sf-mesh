@@ -41,6 +41,8 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "gl/glparticles.h"
 #include "gl/gltex.h"
 #include "model/nifmodel.h"
+#include "glview.h"
+#include "nifskope.h"
 
 #include <QAction>
 #include <QOpenGLContext>
@@ -54,6 +56,7 @@ Scene::Scene( TexCache * texcache, QObject * parent ) :
 	QObject( parent )
 {
 	currentBlock = currentIndex = QModelIndex();
+	selecting = false;
 	animate = true;
 
 	time = 0.0;
@@ -94,6 +97,13 @@ Scene::Scene( TexCache * texcache, QObject * parent ) :
 		options |= DoErrorColor;
 
 	settings.endGroup();
+
+	currentGLColor = FloatVector4( 0.0f );
+	currentGLLineWidth = 1.0f;
+	currentGLPointSize = 1.0f;
+	currentModelViewMatrix = modelViewMatrixStack;
+
+	updateColors( settings );
 }
 
 Scene::~Scene()
@@ -102,16 +112,27 @@ Scene::~Scene()
 		delete renderer;
 }
 
-void Scene::setOpenGLContext( QOpenGLContext * context, QOpenGLFunctions * functions )
+void Scene::setOpenGLContext( QOpenGLContext * context )
 {
 	if ( renderer || !context )
 		return;
-	renderer = new Renderer( context, functions );
+	renderer = new Renderer( context );
 }
 
 void Scene::updateShaders()
 {
 	renderer->updateShaders();
+}
+
+void Scene::updateColors( QSettings & settings )
+{
+	settings.beginGroup( "Settings/Render/Colors/" );
+
+	gridColor = FloatVector4( Color4( settings.value( "Grid Color", QColor( 99, 99, 99, 204 ) ).value<QColor>() ) );
+	highlightColor = FloatVector4( Color4( settings.value( "Highlight", QColor( 255, 255, 0 ) ).value<QColor>() ) );
+	wireframeColor = FloatVector4( Color4( settings.value( "Wireframe", QColor( 0, 255, 0 ) ).value<QColor>() ) );
+
+	settings.endGroup();
 }
 
 void Scene::clear( [[maybe_unused]] bool flushTextures )
@@ -126,6 +147,8 @@ void Scene::clear( [[maybe_unused]] bool flushTextures )
 
 	//if ( flushTextures )
 	textures->flush();
+	if ( renderer )
+		renderer->flushCache();
 
 	sceneBoundsValid = timeBoundsValid = false;
 
@@ -209,6 +232,9 @@ void Scene::updateLodLevel( int level )
 	if ( Game::GameManager::get_game( nifModel ) != Game::STARFIELD )
 		level = std::min( level, 2 );
 	lodLevel = LodLevel( level );
+
+	for ( Shape * s : shapes )
+		s->updateLodLevel();
 }
 
 void Scene::make( NifModel * nif, bool flushTextures )
@@ -339,6 +365,9 @@ void Scene::draw()
 {
 	drawShapes();
 
+	glDisable( GL_CULL_FACE );
+	glDisable( GL_FRAMEBUFFER_SRGB );
+
 	if ( hasOption(ShowNodes) )
 		drawNodes();
 	if ( hasOption(ShowCollision) )
@@ -359,6 +388,7 @@ void Scene::drawShapes()
 		}
 
 		renderer->drawSkyBox( this );
+		drawGrid();
 
 		if ( secondPass.list().count() > 0 )
 			drawSelection(); // for transparency pass
@@ -374,7 +404,57 @@ void Scene::drawShapes()
 		}
 
 		renderer->drawSkyBox( this );
+		drawGrid();
 	}
+}
+
+void Scene::drawGrid()
+{
+	// Draw the grid
+	NifSkope *	w;
+	if ( !hasOption(ShowGrid) || !nifModel || ( w = dynamic_cast< NifSkope * >( nifModel->getWindow() ) ) == nullptr )
+		return;
+	GLView *	v = w->getGLView();
+	if ( !v )
+		return;
+
+	glDisable( GL_FRAMEBUFFER_SRGB );
+	glEnable( GL_DEPTH_TEST );
+	glDepthMask( GL_TRUE );
+	glDepthFunc( GL_LESS );
+
+	FloatVector4	c0 = gridColor;
+	FloatVector4	c1( 1.0f, 0.0f, 0.0f, 1.0f );
+	FloatVector4	c2( 0.0f, 1.0f, 0.0f, 1.0f );
+
+	// Keep the grid "grounded" regardless of Up Axis
+	Transform gridTrans = view;
+	if ( v->cfg.upAxis != GLView::ZAxis ) {
+		static const float	axisRotation[27] = {
+			1.0f, 0.0f, 0.0f,  0.0f, 1.0f, 0.0f,  0.0f, 0.0f, 1.0f,		// Z
+			0.0f, 1.0f, 0.0f,  0.0f, 0.0f, 1.0f,  1.0f, 0.0f, 0.0f,		// Y
+			0.0f, 0.0f, 1.0f,  1.0f, 0.0f, 0.0f,  0.0f, 1.0f, 0.0f		// X
+		};
+		const float *	ap = axisRotation;
+		if ( v->cfg.upAxis == GLView::YAxis ) {
+			ap = ap + 9;
+			c2 = c1;
+			c1.shuffleValues( 0xC6 );	// 2, 1, 0, 3
+		} else if ( v->cfg.upAxis == GLView::XAxis ) {
+			ap = ap + 18;
+			c1 = c2;
+			c2.shuffleValues( 0xD8 );	// 0, 2, 1, 3
+		}
+		gridTrans.rotation = gridTrans.rotation * Matrix( ap );
+	}
+	c1 = ( ( c1 + c0 ) * 0.5f ).blendValues( c0, 0x08 );
+	c2 = ( ( c2 + c0 ) * 0.5f ).blendValues( c0, 0x08 );
+
+	loadModelViewMatrix( gridTrans );
+
+	// TODO: Configurable grid in Settings
+	// 1024 game units, major lines every 128, minor lines every 64
+	drawGrid( ( nifModel->getBSVersion() >= 170 ? 16.0f : 1024.0f ), 16, 2, c0, c1, c2 );
 }
 
 void Scene::drawNodes()
@@ -400,7 +480,7 @@ void Scene::drawFurn()
 
 void Scene::drawSelection() const
 {
-	if ( Node::SELECTING )
+	if ( selecting )
 		return; // do not render the selection when selecting
 
 	for ( Node * node : nodes.list() ) {

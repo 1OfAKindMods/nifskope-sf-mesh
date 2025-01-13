@@ -36,8 +36,8 @@ public:
 	//! Bitangents basis (bitangents[i] = cross(normals[i], tangents[i] * bitangentsBasis[i]))
 	QVector<float> bitangentsBasis;
 	//! UV coordinate sets
-	bool	haveTexCoord2 = false;
-	QVector<Vector4> coords;
+	QVector<Vector2> coords1;
+	QVector<Vector2> coords2;
 	//! Weights
 	QVector<BoneWeightsUNorm> weights;
 	quint8 weightsPerVertex = 0;

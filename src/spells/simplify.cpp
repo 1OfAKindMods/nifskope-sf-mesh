@@ -120,19 +120,18 @@ void spSimplifySFMesh::Meshes::loadGeometryData( const NifModel * nif, const QMo
 	Transform	t;
 	getTransform( t, nif, iMeshData );
 	std::vector< float >	tmpPositions( size_t(numVerts) * 3 );
-	for ( auto i = nif->getItem( iMeshData, "Vertices" ); i; ) {
+	if ( auto i = nif->getItem( iMeshData, "Vertices" ); i ) {
 		for ( size_t j = 0; j < numVerts; j++ ) {
 			Vector3	tmp = t * nif->get<Vector3>( i->child( int(j) ) );
 			tmpPositions[j * 3] = tmp[0];
 			tmpPositions[j * 3 + 1] = tmp[1];
 			tmpPositions[j * 3 + 2] = tmp[2];
 		}
-		break;
 	}
 
 	size_t	indicesCnt = size_t(numTriangles) * 3;
 	std::vector< unsigned int >	tmpIndices( indicesCnt );
-	for ( auto i = nif->getItem( iMeshData, "Triangles" ); i; ) {
+	if ( auto i = nif->getItem( iMeshData, "Triangles" ); i ) {
 		for ( size_t j = 0; j < numTriangles; j++ ) {
 			Triangle	tmp = nif->get<Triangle>( i->child( int(j) ) );
 			if ( tmp[0] >= numVerts || tmp[1] >= numVerts || tmp[2] >= numVerts ) {
@@ -143,7 +142,6 @@ void spSimplifySFMesh::Meshes::loadGeometryData( const NifModel * nif, const QMo
 			tmpIndices[j * 3 + 1] = (unsigned int) ( totalVertices + tmp[1] );
 			tmpIndices[j * 3 + 2] = (unsigned int) ( totalVertices + tmp[2] );
 		}
-		break;
 	}
 
 	totalIndices = totalIndices + indicesCnt;
@@ -264,17 +262,14 @@ void spSimplifySFMesh::Meshes::saveGeometryData( NifModel * nif ) const
 		std::uint32_t	weightsPerVertex = nif->get<quint32>( iMeshData, "Weights Per Vertex" );
 		bool	isSkinned = ( weightsPerVertex != 0 || nif->getBlockIndex( nif->getLink( index, "Skin" ) ).isValid() );
 
-		for ( auto i = nif->getItem( index ); i; ) {
+		if ( auto i = nif->getItem( index ); i ) {
 			i->invalidateVersionCondition();
 			i->invalidateCondition();
-			break;
 		}
 		nif->set<quint32>( iMeshData, "Version", std::max<quint32>( nif->get<quint32>( iMeshData, "Version" ), 1U ) );
 		nif->set<quint32>( iMeshData, "Num LODs", 0 );
-		for ( auto i = nif->getIndex( iMeshData, "LODs" ); i.isValid(); ) {
+		if ( auto i = nif->getIndex( iMeshData, "LODs" ); i.isValid() )
 			nif->updateArraySize( i );
-			break;
-		}
 		for ( int l = 0; l < 3; l++ ) {
 			const QVector< Triangle > &	newTriangles = blockTriangles.at( b ).at( l );
 			size_t	newIndicesCnt = size_t( newTriangles.size() ) * 3;

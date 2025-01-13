@@ -80,6 +80,7 @@ public slots:
 	void clearCubeCache();
 	void selectF76CubeMap();
 	void selectSTFCubeMap();
+	void detectMSAAMaxSamples();
 
 private:
 	std::unique_ptr<Ui::SettingsRender> ui;

@@ -36,8 +36,8 @@ void MeshFile::clear()
 	colors.clear();
 	tangents.clear();
 	bitangentsBasis.clear();
-	haveTexCoord2 = false;
-	coords.clear();
+	coords1.clear();
+	coords2.clear();
 	weights.clear();
 	weightsPerVertex = 0;
 	triangles.clear();
@@ -112,29 +112,28 @@ void MeshFile::update( const void * data, size_t size )
 
 	quint32 numCoord1;
 	in >> numCoord1;
-	coords.resize( numCoord1 );
+	coords1.resize( numCoord1 );
 
-	for ( int i = 0; i < int(numCoord1); i++ ) {
-		uint32_t uv;
+	for ( quint32 i = 0; i < numCoord1; i++ ) {
+		std::uint32_t uv;
 
 		in >> uv;
+		FloatVector4 uv_f( FloatVector4::convertFloat16(uv) );
 
-		coords[i] = Vector4(FloatVector4::convertFloat16(uv));
+		coords1[i] = Vector2( uv_f[0], uv_f[1] );
 	}
 
 	quint32 numCoord2;
 	in >> numCoord2;
-	numCoord2 = std::min( numCoord2, numCoord1 );
-	haveTexCoord2 = bool( numCoord2 );
+	coords2.resize( numCoord2 );
 
 	for ( quint32 i = 0; i < numCoord2; i++ ) {
-		uint32_t uv;
+		std::uint32_t uv;
 
 		in >> uv;
-		FloatVector4  uv_f(FloatVector4::convertFloat16(uv));
+		FloatVector4 uv_f( FloatVector4::convertFloat16(uv) );
 
-		coords[i][2] = uv_f[0];
-		coords[i][3] = uv_f[1];
+		coords2[i] = Vector2( uv_f[0], uv_f[1] );
 	}
 
 	quint32 numColor;
@@ -278,27 +277,19 @@ void MeshFile::update( const NifModel * nif, const QModelIndex & index )
 	auto	uvItem1 = nif->getItem( meshData, "UVs" );
 	if ( !uvItem1 )
 		numCoord1 = 0;
-	coords.resize( numCoord1 );
+	coords1.resize( numCoord1 );
 
-	for ( int i = 0; i < int(numCoord1); i++ ) {
-		HalfVector2	uv = nif->get<HalfVector2>( uvItem1->child( i ) );
-
-		coords[i] = Vector4( uv[0], uv[1], 0.0f, 0.0f );
-	}
+	for ( int i = 0; i < int(numCoord1); i++ )
+		coords1[i] = nif->get<Vector2>( uvItem1->child( i ) );
 
 	quint32 numCoord2 = nif->get<quint32>( meshData, "Num UVs 2" );
 	auto	uvItem2 = nif->getItem( meshData, "UVs 2" );
 	if ( !uvItem2 )
 		numCoord2 = 0;
-	numCoord2 = std::min( numCoord2, numCoord1 );
-	haveTexCoord2 = bool( numCoord2 );
+	coords2.resize( numCoord2 );
 
-	for ( quint32 i = 0; i < numCoord2; i++ ) {
-		HalfVector2	uv = nif->get<HalfVector2>( uvItem2->child( i ) );
-
-		coords[i][2] = uv[0];
-		coords[i][3] = uv[1];
-	}
+	for ( int i = 0; i < int(numCoord2); i++ )
+		coords2[i] = nif->get<Vector2>( uvItem2->child( i ) );
 
 	quint32 numColor = nif->get<quint32>( meshData, "Num Vertex Colors" );
 	auto	colorsIndex = nif->getIndex( meshData, "Vertex Colors" );

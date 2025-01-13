@@ -1,12 +1,20 @@
  == CHANGELOG ==
 
+* Reworked the renderer to no longer use legacy (compatibility profile) OpenGL. This is an experimental change and there are still limitations and issues.
+
+#### NifSkope-2.0.dev9-20241228
+
 * Implemented rendering bhkCylinderShape (fix to issue https://github.com/hexabits/nifskope/issues/37).
 * Added a new resource setting to disable the message box that is shown if an archive or data folder cannot be opened.
 * Added keyboard shortcuts to moving and deleting data paths in the resource settings.
 * Exported UV layouts can be solid filled.
 * Improvements to OBJ export.
 * Added support for more Skyrim Havok material types that were previously unknown.
+* Fixed error message on using Transform/Apply on BSTriShape geometry with full precision vertex positions.
+* Fixed hang on opening loose .bto and .btr files.
 * Fixed the block types NiMeshPSysData and NiMeshParticleSystem being incorrectly filtered out by 'Block/Insert'.
+* Fixed bug in checking vertex attribute flags for enabling the Skyrim multilayer parallax shader.
+* Fixed issue with opening data paths that contain non-ASCII characters on Windows. Note that currently the paths need to be valid in the local 8-bit code page.
 
 #### NifSkope-2.0.dev9-20241112
 

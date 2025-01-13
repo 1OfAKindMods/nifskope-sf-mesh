@@ -40,17 +40,12 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "gamemanager.h"
 #include "libfo76utils/src/ddstxt16.hpp"
 #include "glview.h"
+#include "renderer.h"
 
 #include <QOpenGLContext>
 
 
 //! @file glproperty.cpp Encapsulation of NiProperty blocks defined in nif.xml
-
-//! Helper function that checks texture sets
-bool checkSet( int s, const QVector<QVector<Vector2> > & texcoords )
-{
-	return s >= 0 && s < texcoords.count() && texcoords[s].count();
-}
 
 Property * Property::create( Scene * scene, const NifModel * nif, const QModelIndex & index )
 {
@@ -245,7 +240,7 @@ void AlphaProperty::setController( const NifModel * nif, const QModelIndex & con
 	}
 }
 
-void glProperty( AlphaProperty * p )
+void AlphaProperty::glProperty( AlphaProperty * p, NifSkopeOpenGLContext::Program * prog )
 {
 	if ( p && p->alphaBlend && p->scene->hasOption(Scene::DoBlending) ) {
 		glEnable( GL_BLEND );
@@ -254,36 +249,18 @@ void glProperty( AlphaProperty * p )
 		glDisable( GL_BLEND );
 	}
 
-	static const GLenum testMap[8] = {
-		GL_ALWAYS, GL_LESS, GL_EQUAL, GL_LEQUAL, GL_GREATER, GL_NOTEQUAL, GL_GEQUAL, GL_NEVER
-	};
+	if ( !prog )
+		return;
 
-	int	alphaTestFunc;
-	if ( p && ( alphaTestFunc = p->alphaFunc ) > 0 && p->scene->hasOption(Scene::DoBlending) ) {
-		glEnable( GL_ALPHA_TEST );
-		glAlphaFunc( testMap[alphaTestFunc], p->alphaThreshold );
-	} else {
-		glDisable( GL_ALPHA_TEST );
-	}
-}
-
-int AlphaProperty::glProperty( float & alphaTestThreshold, const AlphaProperty * p )
-{
-	if ( p && p->alphaBlend && p->scene->hasOption(Scene::DoBlending) ) {
-		glEnable( GL_BLEND );
-		glBlendFunc( p->alphaSrc, p->alphaDst );
-	} else {
-		glDisable( GL_BLEND );
-	}
-
-	glDisable( GL_ALPHA_TEST );
+	// test function (-1: disabled, 0: always, 1: <, 2: ==, 3: <=, 4: >, 5: !=, 6: >=, 7: never)
 	int	alphaTestFunc = -1;
+	float	alphaTestThreshold = 0.0f;
 	if ( p && p->alphaTest && p->scene->hasOption(Scene::DoBlending) ) {
 		alphaTestFunc = p->alphaFunc;
 		alphaTestThreshold = p->alphaThreshold;
 	}
-
-	return alphaTestFunc;
+	prog->uni1i( "alphaTestFunc", alphaTestFunc );
+	prog->uni1f( "alphaThreshold", alphaTestThreshold );
 }
 
 void ZBufferProperty::updateImpl( const NifModel * nif, const QModelIndex & index )
@@ -309,7 +286,7 @@ void ZBufferProperty::updateImpl( const NifModel * nif, const QModelIndex & inde
 	}
 }
 
-void glProperty( ZBufferProperty * p )
+void ZBufferProperty::glProperty( ZBufferProperty * p )
 {
 	if ( p ) {
 		if ( p->depthTest ) {
@@ -360,7 +337,7 @@ void TexturingProperty::updateImpl( const NifModel * nif, const QModelIndex & in
 				}
 
 				float af = 1.0;
-				float max_af = get_max_anisotropy();
+				float max_af = TexCache::get_max_anisotropy();
 				// Let User Settings decide for trilinear
 				if ( filterMode == GL_LINEAR_MIPMAP_LINEAR )
 					af = max_af;
@@ -455,33 +432,30 @@ bool TexturingProperty::bind( int id, const QString & fname )
 		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, mipmaps > 1 ? textures[id].filter : GL_LINEAR );
 		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, textures[id].wrapS );
 		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, textures[id].wrapT );
-		glTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
-		glMatrixMode( GL_TEXTURE );
-		glLoadIdentity();
 
-		glMatrixMode( GL_MODELVIEW );
 		return true;
 	}
 
 	return false;
 }
 
-bool TexturingProperty::bind( int id, const QVector<QVector<Vector2> > & texcoords )
+bool TexturingProperty::bind( int id, int stage, NifSkopeOpenGLContext::Program * prog )
 {
-	if ( checkSet( textures[id].coordset, texcoords ) && bind( id ) ) {
-		glEnable( GL_TEXTURE_2D );
-		glEnableClientState( GL_TEXTURE_COORD_ARRAY );
-		glTexCoordPointer( 2, GL_FLOAT, 0, texcoords[ textures[id].coordset ].data() );
-		return true;
-	} else {
-		glDisable( GL_TEXTURE_2D );
-		return false;
+	int	n = 0;
+	if ( id >= 0 && id < numTextures && prog ) {
+		const auto &	t = textures[id];
+		if ( t.coordset >= 0 && t.coordset < 9 && scene->textures->activateTextureUnit( stage ) && bind( id ) ) {
+			n = stage + 1;
+			prog->uni1i_l( prog->uniLocation( "textureUnits[%d]", stage ), stage );
+			prog->uni2f_l( prog->uniLocation( "textures[%d].uvCenter", id ), t.center[0], t.center[1] );
+			prog->uni2f_l( prog->uniLocation( "textures[%d].uvScale", id ), t.tiling[0], t.tiling[1] );
+			prog->uni2f_l( prog->uniLocation( "textures[%d].uvOffset", id ), t.translation[0], t.translation[1] );
+			prog->uni1f_l( prog->uniLocation( "textures[%d].uvRotation", id ), t.rotation );
+			prog->uni1i_l( prog->uniLocation( "textures[%d].coordSet", id ), t.coordset );
+			prog->uni1i_l( prog->uniLocation( "textures[%d].textureUnit", id ), n );
+		}
 	}
-}
-
-bool TexturingProperty::bind( int id, const QVector<QVector<Vector2> > & texcoords, int stage )
-{
-	return ( activateTextureUnit( stage ) && activateClientTexture( stage ) && bind( id, texcoords ) );
+	return bool( n );
 }
 
 QString TexturingProperty::fileName( int id ) const
@@ -538,13 +512,6 @@ int TexturingProperty::getId( const QString & texname )
 	return hash.value( texname, -1 );
 }
 
-void glProperty( TexturingProperty * p )
-{
-	if ( p && p->scene->hasOption(Scene::DoTexturing) && p->bind(0) ) {
-		glEnable( GL_TEXTURE_2D );
-	}
-}
-
 /*
     TextureProperty
 */
@@ -558,34 +525,26 @@ void TextureProperty::updateImpl( const NifModel * nif, const QModelIndex & inde
 	}
 }
 
-bool TextureProperty::bind()
+bool TextureProperty::bind( NifSkopeOpenGLContext::Program * prog )
 {
-	if ( GLuint mipmaps = scene->bindTexture( fileName() ) ) {
-		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT );
-		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT );
-		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, mipmaps > 1 ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR );
-		glTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
-		glMatrixMode( GL_TEXTURE );
-		glLoadIdentity();
-		glMatrixMode( GL_MODELVIEW );
-		return true;
-	}
-
-	return false;
-}
-
-bool TextureProperty::bind( const QVector<QVector<Vector2> > & texcoords )
-{
-	if ( checkSet( 0, texcoords ) && bind() ) {
-		glEnable( GL_TEXTURE_2D );
-		glEnableClientState( GL_TEXTURE_COORD_ARRAY );
-		glTexCoordPointer( 2, GL_FLOAT, 0, texcoords[ 0 ].data() );
-		return true;
-	} else {
-		glDisable( GL_TEXTURE_2D );
+	GLuint	mipmaps;
+	if ( !( prog && ( mipmaps = scene->bindTexture( fileName() ) ) != 0 ) )
 		return false;
-	}
+
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, mipmaps > 1 ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR );
+
+	prog->uni1i_l( prog->uniLocation( "textureUnits[%d]", 0 ), 0 );
+	prog->uni2f_l( prog->uniLocation( "textures[%d].uvCenter", 0 ), 0.5f, 0.5f );
+	prog->uni2f_l( prog->uniLocation( "textures[%d].uvScale", 0 ), 1.0f, 1.0f );
+	prog->uni2f_l( prog->uniLocation( "textures[%d].uvOffset", 0 ), 0.0f, 0.0f );
+	prog->uni1f_l( prog->uniLocation( "textures[%d].uvRotation", 0 ), 0.0f );
+	prog->uni1i_l( prog->uniLocation( "textures[%d].coordSet", 0 ), 0 );
+	prog->uni1i_l( prog->uniLocation( "textures[%d].textureUnit", 0 ), 1 );
+
+	return true;
 }
 
 QString TextureProperty::fileName() const
@@ -607,13 +566,6 @@ void TextureProperty::setController( const NifModel * nif, const QModelIndex & i
 	}
 }
 
-void glProperty( TextureProperty * p )
-{
-	if ( p && p->scene->hasOption(Scene::DoTexturing) && p->bind() ) {
-		glEnable( GL_TEXTURE_2D );
-	}
-}
-
 /*
     MaterialProperty
 */
@@ -623,11 +575,7 @@ void MaterialProperty::updateImpl( const NifModel * nif, const QModelIndex & ind
 	Property::updateImpl( nif, index );
 
 	if ( index == iBlock ) {
-		alpha = nif->get<float>( iBlock, "Alpha" );
-		if ( alpha < 0.0 )
-			alpha = 0.0;
-		if ( alpha > 1.0 )
-			alpha = 1.0;
+		alpha = std::min( std::max( nif->get<float>( iBlock, "Alpha" ), 0.0f ), 1.0f );
 
 		const NifItem *	i = nif->getItem( iBlock, "Ambient Color" );
 		if ( !i )
@@ -656,28 +604,32 @@ void MaterialProperty::setController( const NifModel * nif, const QModelIndex & 
 }
 
 
-void glProperty( MaterialProperty * p, SpecularProperty * s )
+void MaterialProperty::glProperty( MaterialProperty * p, SpecularProperty * s, NifSkopeOpenGLContext::Program * prog )
 {
+	if ( !prog )
+		return;
+
 	if ( p ) {
-		glMaterial( GL_FRONT_AND_BACK, GL_AMBIENT, p->ambient.blend( p->alpha ) );
-		glMaterial( GL_FRONT_AND_BACK, GL_DIFFUSE, p->diffuse.blend( p->alpha ) );
-		glMaterial( GL_FRONT_AND_BACK, GL_EMISSION, p->emissive.blend( p->alpha ) );
+		prog->uni1f( "alpha", p->alpha );
+
+		prog->uni4f( "frontMaterialAmbient", FloatVector4( p->ambient ) );
+		prog->uni4f( "frontMaterialDiffuse", FloatVector4( p->diffuse ) );
+		prog->uni4f( "frontMaterialEmission", FloatVector4( p->emissive ) );
 
 		if ( !s || s->spec ) {
-			glMaterialf( GL_FRONT_AND_BACK, GL_SHININESS, p->shininess );
-			glMaterial( GL_FRONT_AND_BACK, GL_SPECULAR, p->specular.blend( p->alpha ) );
+			prog->uni1f( "frontMaterialShininess", p->shininess );
+			prog->uni4f( "frontMaterialSpecular", FloatVector4( p->specular ) );
 		} else {
-			glMaterialf( GL_FRONT_AND_BACK, GL_SHININESS, 0.0 );
-			glMaterial( GL_FRONT_AND_BACK, GL_SPECULAR, Color4( 0.0, 0.0, 0.0, p->alpha ) );
+			prog->uni1f( "frontMaterialShininess", 0.0f );
+			prog->uni4f( "frontMaterialSpecular", FloatVector4( 0.0f, 0.0f, 0.0f, 1.0f ) );
 		}
 	} else {
-		Color4 a( 0.4f, 0.4f, 0.4f, 1.0f );
-		Color4 d( 0.8f, 0.8f, 0.8f, 1.0f );
-		Color4 s( 1.0f, 1.0f, 1.0f, 1.0f );
-		glMaterialf( GL_FRONT_AND_BACK, GL_SHININESS, 33.0f );
-		glMaterial( GL_FRONT_AND_BACK, GL_AMBIENT, a );
-		glMaterial( GL_FRONT_AND_BACK, GL_DIFFUSE, d );
-		glMaterial( GL_FRONT_AND_BACK, GL_SPECULAR, s );
+		prog->uni1f( "alpha", 1.0f );
+		prog->uni1f( "frontMaterialShininess", 33.0f );
+		prog->uni4f( "frontMaterialAmbient", FloatVector4( 0.4f, 0.4f, 0.4f, 1.0f ) );
+		prog->uni4f( "frontMaterialDiffuse", FloatVector4( 0.8f, 0.8f, 0.8f, 1.0f ) );
+		prog->uni4f( "frontMaterialEmission", FloatVector4( 0.0f, 0.0f, 0.0f, 1.0f ) );
+		prog->uni4f( "frontMaterialSpecular", FloatVector4( 1.0f, 1.0f, 1.0f, 1.0f ) );
 	}
 }
 
@@ -699,14 +651,21 @@ void WireframeProperty::updateImpl( const NifModel * nif, const QModelIndex & in
 	}
 }
 
-void glProperty( WireframeProperty * p )
+bool WireframeProperty::glProperty( WireframeProperty * p )
 {
+	glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
 	if ( p && p->wire ) {
-		glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
-		glLineWidth( GLView::Settings::lineWidthWireframe * 0.625f );
-	} else {
-		glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
+		NifSkopeOpenGLContext::Program *	prog;
+		if ( !( p->scene->renderer && ( prog = p->scene->renderer->useProgram( "wireframe.prog" ) ) != nullptr ) )
+			return false;
+
+		prog->uni1f( "lineWidth", GLView::Settings::lineWidthWireframe * 0.625f );
+		prog->uni4f( "vertexColorOverride", FloatVector4( 1.0e-15f ).maxValues( p->scene->wireframeColor ) );
+		prog->uni1i( "selectionParam", -1 );
+
+		return true;
 	}
+	return false;
 }
 
 void VertexColorProperty::updateImpl( const NifModel * nif, const QModelIndex & index )
@@ -715,59 +674,31 @@ void VertexColorProperty::updateImpl( const NifModel * nif, const QModelIndex & 
 
 	if ( index == iBlock ) {
 		if ( nif->checkVersion( 0, 0x14010001 ) ) {
-			vertexmode = nif->get<int>( iBlock, "Vertex Mode" );
+			int vertexmode = nif->get<int>( iBlock, "Vertex Mode" );
 			// 0 : source ignore
 			// 1 : source emissive
 			// 2 : source ambient + diffuse
-			lightmode = nif->get<int>( iBlock, "Lighting Mode" );
+			int lightmode = nif->get<int>( iBlock, "Lighting Mode" );
 			// 0 : emissive
 			// 1 : emissive + ambient + diffuse
+			vertexColorFlags = ( ( vertexmode & 3 ) << 4 ) | ( ( lightmode & 1 ) << 3 );
 		} else {
-			auto flags = nif->get<quint16>( iBlock, "Flags" );
-			vertexmode = (flags & 0x0030) >> 4;
-			lightmode = (flags & 0x0008) >> 3;
+			vertexColorFlags = nif->get<quint16>( iBlock, "Flags" ) & 0x3F;
 		}
 	}
 }
 
-void glProperty( VertexColorProperty * p, bool vertexcolors )
+void VertexColorProperty::glProperty(
+	VertexColorProperty * p, FloatVector4 overrideColor, NifSkopeOpenGLContext::Program * prog )
 {
-	// FIXME
-
-	if ( !vertexcolors ) {
-		glDisable( GL_COLOR_MATERIAL );
-		glColor( Color4( 1.0, 1.0, 1.0, 1.0 ) );
+	if ( !prog )
 		return;
-	}
 
-	if ( p ) {
-		//if ( p->lightmode )
-		{
-			switch ( p->vertexmode ) {
-			case 0:
-				glDisable( GL_COLOR_MATERIAL );
-				glColor( Color4( 1.0, 1.0, 1.0, 1.0 ) );
-				return;
-			case 1:
-				glEnable( GL_COLOR_MATERIAL );
-				glColorMaterial( GL_FRONT_AND_BACK, GL_EMISSION );
-				return;
-			case 2:
-			default:
-				glEnable( GL_COLOR_MATERIAL );
-				glColorMaterial( GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE );
-				return;
-			}
-		}
-		//else
-		//{
-		//	glDisable( GL_LIGHTING );
-		//	glDisable( GL_COLOR_MATERIAL );
-		//}
-	} else {
-		glEnable( GL_COLOR_MATERIAL );
-		glColorMaterial( GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE );
-	}
+	int	vertexColorFlags = 0x28;
+	if ( p )
+		vertexColorFlags = p->vertexColorFlags;
+	prog->uni4f( "vertexColorOverride", overrideColor );
+	prog->uni1i( "vertexColorFlags", vertexColorFlags );
 }
 
 void StencilProperty::updateImpl( const NifModel * nif, const QModelIndex & index )
@@ -823,7 +754,7 @@ void StencilProperty::updateImpl( const NifModel * nif, const QModelIndex & inde
 	}
 }
 
-void glProperty( StencilProperty * p )
+void StencilProperty::glProperty( StencilProperty * p )
 {
 	if ( p ) {
 		if ( p->cullEnable )
@@ -917,13 +848,6 @@ void BSShaderLightingProperty::resetParams()
 	isVertexAlphaAnimation = false;
 }
 
-void glProperty( BSShaderLightingProperty * p )
-{
-	if ( p && p->scene->hasOption(Scene::DoTexturing) && p->bind(0) ) {
-		glEnable( GL_TEXTURE_2D );
-	}
-}
-
 void BSShaderLightingProperty::clear()
 {
 	Property::clear();
@@ -959,7 +883,7 @@ int BSShaderLightingProperty::getSFTexture( int & texunit, FloatVector4 & replUn
 		size_t	n = texturePath.length();
 		if ( ( n - 1 ) & ~( size_t(1023) ) )
 			break;		// empty path or not enough space in tmpBuf
-		if ( !( texunit >= 3 && texunit < TexCache::num_texture_units && activateTextureUnit( texunit ) ) )
+		if ( !( texunit >= 3 && scene->textures->activateTextureUnit( texunit ) ) )
 			break;
 
 		TexClampMode	clampMode = TexClampMode::WRAP_S_WRAP_T;
@@ -1142,27 +1066,10 @@ bool BSShaderLightingProperty::bind( const QStringView & fname, bool forceTextur
 	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrapS );
 	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrapT );
 
-	glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, get_max_anisotropy() );
+	glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, TexCache::get_max_anisotropy() );
 	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
 	glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, mipmaps > 1 ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR );
-	glTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
-	glMatrixMode( GL_TEXTURE );
-	glLoadIdentity();
-	glMatrixMode( GL_MODELVIEW );
 	return true;
-}
-
-bool BSShaderLightingProperty::bind( int id, const QVector<QVector<Vector2> > & texcoords )
-{
-	if ( checkSet( 0, texcoords ) && bind( id ) ) {
-		glEnable( GL_TEXTURE_2D );
-		glEnableClientState( GL_TEXTURE_COORD_ARRAY );
-		glTexCoordPointer( 2, GL_FLOAT, 0, texcoords[ 0 ].data() );
-		return true;
-	}
-
-	glDisable( GL_TEXTURE_2D );
-	return false;
 }
 
 enum

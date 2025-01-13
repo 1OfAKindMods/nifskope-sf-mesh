@@ -1,5 +1,4 @@
-#version 120
-#extension GL_ARB_shader_texture_lod : require
+#version 410 core
 
 uniform sampler2D BaseMap;
 uniform sampler2D NormalMap;
@@ -46,15 +45,19 @@ uniform float backlightPower;
 
 uniform float envReflection;
 
-varying vec3 LightDir;
-varying vec3 ViewDir;
+in vec3 LightDir;
+in vec3 ViewDir;
 
-varying vec4 A;
-varying vec4 C;
-varying vec4 D;
+in vec2 texCoord;
 
-varying mat3 btnMatrix;
-varying mat3 reflMatrix;
+in vec4 A;
+in vec4 C;
+in vec4 D;
+
+in mat3 btnMatrix;
+in mat3 reflMatrix;
+
+out vec4 fragColor;
 
 vec3 ViewDir_norm = normalize( ViewDir );
 mat3 btnMatrix_norm = mat3( normalize( btnMatrix[0] ), normalize( btnMatrix[1] ), normalize( btnMatrix[2] ) );
@@ -202,14 +205,14 @@ vec3 tonemap(vec3 x, float y)
 }
 
 vec4 colorLookup( float x, float y ) {
-	return texture2D( GreyscaleMap, vec2( clamp(x, 0.0, 1.0), clamp(y, 0.0, 1.0) ) );
+	return texture( GreyscaleMap, vec2( clamp(x, 0.0, 1.0), clamp(y, 0.0, 1.0) ) );
 }
 
-void main( void )
+void main()
 {
-	vec2 offset = gl_TexCoord[0].st * uvScale + uvOffset;
+	vec2 offset = texCoord.st * uvScale + uvOffset;
 
-	vec4 baseMap = texture2D( BaseMap, offset );
+	vec4 baseMap = texture( BaseMap, offset );
 
 	vec4 color = baseMap;
 	color.a = C.a * baseMap.a * alpha;
@@ -222,9 +225,9 @@ void main( void )
 			discard;
 	}
 
-	vec4 normalMap = texture2D( NormalMap, offset );
-	vec4 specMap = texture2D( SpecularMap, offset );
-	vec4 glowMap = texture2D( GlowMap, offset );
+	vec4 normalMap = texture( NormalMap, offset );
+	vec4 specMap = texture( SpecularMap, offset );
+	vec4 glowMap = texture( GlowMap, offset );
 
 	vec3 normal = normalMap.rgb * 2.0 - 1.0;
 	// Calculate missing blue channel
@@ -282,8 +285,8 @@ void main( void )
 	}
 
 	// Environment
-	vec4 cube = textureCubeLod( CubeMap, reflectedWS, 8.0 - smoothness * 8.0 );
-	vec4 env = texture2D( EnvironmentMap, offset );
+	vec4 cube = textureLod( CubeMap, reflectedWS, 8.0 - smoothness * 8.0 );
+	vec4 env = texture( EnvironmentMap, offset );
 	if ( hasCubeMap ) {
 		cube.rgb *= envReflection * specStrength;
 		if ( hasEnvMask ) {
@@ -339,5 +342,5 @@ void main( void )
 
 	color.rgb = tonemap( color.rgb * D.a, A.a );
 
-	gl_FragColor = color;
+	fragColor = color;
 }

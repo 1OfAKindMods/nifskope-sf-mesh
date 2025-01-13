@@ -453,10 +453,10 @@ inline FloatVector4& FloatVector4::exp2V()
 inline FloatVector4& FloatVector4::normalize(bool invFlag)
 {
   float   tmp = dotProduct(*this);
-  if (tmp > 0.0f)
+  if (tmp > 0.0f) [[likely]]
   {
-    tmp = (!invFlag ? 1.0f : -1.0f) / float(std::sqrt(tmp));
-    *this *= tmp;
+    tmp = float(std::sqrt(tmp));
+    *this /= (!invFlag ? tmp : -tmp);
   }
   return (*this);
 }

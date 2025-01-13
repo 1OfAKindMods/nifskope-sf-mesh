@@ -1,5 +1,4 @@
-#version 120
-#extension GL_ARB_shader_texture_lod : require
+#version 410 core
 
 uniform sampler2D BaseMap;
 uniform sampler2D NormalMap;
@@ -44,15 +43,19 @@ uniform float backlightPower;
 
 uniform float envReflection;
 
-varying vec3 LightDir;
-varying vec3 ViewDir;
+in vec3 LightDir;
+in vec3 ViewDir;
 
-varying vec4 A;
-varying vec4 C;
-varying vec4 D;
+in vec2 texCoord;
 
-varying mat3 btnMatrix;
-varying mat3 reflMatrix;
+in vec4 A;
+in vec4 C;
+in vec4 D;
+
+in mat3 btnMatrix;
+in mat3 reflMatrix;
+
+out vec4 fragColor;
 
 vec3 ViewDir_norm = normalize( ViewDir );
 mat3 btnMatrix_norm = mat3( normalize( btnMatrix[0] ), normalize( btnMatrix[1] ), normalize( btnMatrix[2] ) );
@@ -99,11 +102,11 @@ float srgbCompress(float x)
 	return (((y * -0.18732371 + 0.59302883) * y - 0.79095451) * y + 1.42598062) * y - 0.04110602;
 }
 
-void main(void)
+void main()
 {
-	vec2 offset = gl_TexCoord[0].st * uvScale + uvOffset;
+	vec2 offset = texCoord.st * uvScale + uvOffset;
 
-	vec4	baseMap = texture2D(BaseMap, offset);
+	vec4	baseMap = texture(BaseMap, offset);
 
 	vec4 color = baseMap;
 	color.a = C.a * baseMap.a * alpha;
@@ -116,12 +119,12 @@ void main(void)
 			discard;
 	}
 
-	vec4	normalMap = texture2D(NormalMap, offset);
+	vec4	normalMap = texture(NormalMap, offset);
 	vec4	lightingMap = vec4(0.25, 1.0, 0.0, 1.0);
 	if ( hasSpecularMap )
-		lightingMap = texture2D(LightingMap, offset);
-	vec4	reflMap = texture2D(ReflMap, offset);
-	vec4	glowMap = texture2D(GlowMap, offset);
+		lightingMap = texture(LightingMap, offset);
+	vec4	reflMap = texture(ReflMap, offset);
+	vec4	glowMap = texture(GlowMap, offset);
 
 	vec3 normal = normalMap.rgb;
 	// Calculate missing blue channel
@@ -147,7 +150,7 @@ void main(void)
 	vec3 albedo = baseMap.rgb * C.rgb;
 	if ( greyscaleColor ) {
 		// work around incorrect format used by Fallout 76 grayscale textures
-		albedo = texture2DLod(GreyscaleMap, vec2(srgbCompress(baseMap.g), paletteScale * C.r), 0.0).rgb;
+		albedo = textureLod(GreyscaleMap, vec2(srgbCompress(baseMap.g), paletteScale * C.r), 0.0).rgb;
 	}
 
 	// Emissive
@@ -171,9 +174,9 @@ void main(void)
 	// Diffuse
 	vec3	diffuse = vec3(NdotL0);
 	// Fresnel
-	vec2	fDirect = texture2DLod(EnvironmentMap, vec2(LdotH, NdotL0), 0.0).ba;
+	vec2	fDirect = textureLod(EnvironmentMap, vec2(LdotH, NdotL0), 0.0).ba;
 	spec *= mix(f0, vec3(1.0), fDirect.x);
-	vec4	envLUT = texture2DLod(EnvironmentMap, vec2(NdotV, roughness), 0.0);
+	vec4	envLUT = textureLod(EnvironmentMap, vec2(NdotV, roughness), 0.0);
 	vec2	fDiff = vec2(fDirect.y, envLUT.b);
 	fDiff = fDiff * (LdotH * LdotH * roughness * 2.0 - 0.5) + 1.0;
 	diffuse *= (vec3(1.0) - f0) * fDiff.x * fDiff.y;
@@ -183,10 +186,10 @@ void main(void)
 	vec3	ambient = A.rgb;
 	if ( hasCubeMap ) {
 		float	m = roughness * (roughness * -4.0 + 10.0);
-		refl = textureCubeLod(CubeMap, reflectedWS, max(m, 0.0)).rgb;
+		refl = textureLod(CubeMap, reflectedWS, max(m, 0.0)).rgb;
 		refl *= envReflection * specStrength;
 		refl *= ambient;
-		ambient *= textureCubeLod(CubeMap2, normalWS, 0.0).rgb;
+		ambient *= textureLod(CubeMap2, normalWS, 0.0).rgb;
 	} else {
 		ambient /= 15.0;
 		refl = ambient;
@@ -230,5 +233,5 @@ void main(void)
 
 	color.rgb = tonemap(color.rgb * D.a, A.a);
 
-	gl_FragColor = color;
+	fragColor = color;
 }

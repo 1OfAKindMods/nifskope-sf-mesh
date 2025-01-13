@@ -23,6 +23,7 @@
         <verexpr token="#BS_GTE_F76#" string="(#BSVER# #GTE# 155)">Fallout 76 and later.</verexpr>
         <verexpr token="#BS_GTE_STF#" string="(#BSVER# #GTE# 170)">Starfield and later.</verexpr>
         <verexpr token="#BS_SSE#" string="(#BSVER# #EQ# 100)">SSE only.</verexpr>
+        <verexpr token="#BS_SKY_SSE#" string="((#BSVER# #GTE# 83) #AND# (#BSVER# #LTE# 100))">Skyrim and SSE.</verexpr>
         <verexpr token="#BS_FO4#" string="(#BSVER# #EQ# 130)">Fallout 4 strictly, excluding stream 132 and 139 in dev files.</verexpr>
         <verexpr token="#BS_FO4_2#" string="((#BSVER# #GTE# 130) #AND# (#BSVER# #LTE# 139))">Fallout 4/76 including dev files.</verexpr>
         <verexpr token="#BS_GT_130#" string="(#BSVER# #GT# 130)">Later than Bethesda 130.</verexpr>
@@ -579,7 +580,7 @@
         <option value="127" name="FO_HAV_MAT_RUBBER_BALL_STAIRS_PLATFORM">Rubber Ball</option>
     </enum>
 
-    <enum name="SkyrimHavokMaterial" storage="uint" versions="#SKY_AND_LATER#">
+    <enum name="SkyrimHavokMaterial" storage="uint" versions="V20_2_0_7_SKY V20_2_0_7_SSE">
         Bethesda Havok. Material descriptor for a Havok shape in Skyrim. CRC32 of the lowercase of the Creation Kit Material Name.
         <option value="0" name="SKY_HAV_MAT_NONE">Invalid Material</option>
         <option value="131151687" name="SKY_HAV_MAT_BROKEN_STONE">Broken Stone</option>
@@ -674,6 +675,348 @@
         <option value="3974071006" name="SKY_HAV_MAT_STAIRS_METAL">Stairs Metal</option>
         <option value="4239621792" name="SKY_HAV_MAT_UNKNOWN_4239621792">Unknown in Creation Kit v1.9.32.0. Found in Dawnguard DLC in meshes\dlc01\prototype\dlc1protoswingingbridge.nif.</option>
         <option value="4283869410" name="SKY_HAV_MAT_MATERIAL_BOULDER_MEDIUM">Material Boulder Medium</option>
+    </enum>
+
+    <enum name="Fallout4HavokMaterial" storage="uint" versions="V20_2_0_7_FO4 V20_2_0_7_FO4_2">
+        Bethesda Havok. Material descriptor for a Havok shape in Fallout 4.
+        <option value="0" name="FO4_MAT_NONE">Invalid Material</option>
+        <option value="26782757" name="MaterialMetalSolidAxe1Hand">Axe1Hand</option>
+        <option value="69730436" name="MaterialPlasticBin">MaterialPlasticBin</option>
+        <option value="71178380" name="MaterialMetalVertibirdChassisSmall">MaterialMetalVertibirdChassisSmall</option>
+        <option value="104858580" name="Material_Metal">Metal</option>
+        <option value="172611777" name="MaterialGlassBottleSmall">BottleSmall</option>
+        <option value="186875565" name="Material__GenericMaster">Generic</option>
+        <option value="238888479" name="MaterialWeaponBowsStaves">WeaponBowsStaves</option>
+        <option value="293847076" name="MaterialPlasticBowlingBall">MaterialPlasticBowlingBall</option>
+        <option value="301080923" name="DLC05MaterialBallTrackWood">DLC05MaterialBallTrackWood</option>
+        <option value="327411453" name="MaterialMetalTray">MaterialMetalTray</option>
+        <option value="341181474" name="MaterialWoodCrate">MaterialWoodCrate</option>
+        <option value="361241712" name="MaterialWeaponMetalBlade1HandSmall">MaterialWeaponMetalBlade1HandSmall</option>
+        <option value="398949039" name="MaterialDirtSnow">Snow</option>
+        <option value="428587608" name="MaterialDirtGravel">Gravel</option>
+        <option value="450934209" name="MaterialWeaponMetalMine">MaterialWeaponMetalMine</option>
+        <option value="493553910" name="MaterialGlassBottle">Bottle</option>
+        <option value="500811281" name="Material_Wood">Wood</option>
+        <option value="504699171" name="MaterialWoodLightArrow">Arrow</option>
+        <option value="591247106" name="MaterialOrganicSkin">Skin</option>
+        <option value="630687820" name="MaterialClothCushion">ClothCushion</option>
+        <option value="657718602" name="MaterialPlasticLarge">MaterialPlasticLarge</option>
+        <option value="668408902" name="MaterialOrganicInsect">Insect</option>
+        <option value="672193313" name="MaterialMetalVertibirdChassisLarge">MaterialMetalVertibirdChassisLarge</option>
+        <option value="694643242" name="MaterialWeaponMetalBlade2Hand">WeaponBlade2Hand</option>
+        <option value="706373264" name="MaterialMetalSolid">MetalSolid</option>
+        <option value="747607327" name="MaterialPlasticTrafficCone">MaterialPlasticTrafficCone</option>
+        <option value="748236019" name="MaterialMetalArmorHeavy">ArmorHeavy</option>
+        <option value="774657257" name="MaterialClipboard">MaterialClipboard</option>
+        <option value="811073006" name="MaterialStoneBrokenStairs">StoneBrokenStairs</option>
+        <option value="873356572" name="MaterialDirtSnowIce">Ice</option>
+        <option value="885278459" name="MaterialGlassCeramicMedium">CeramicMedium</option>
+        <option value="911716378" name="MaterialStoneConcrete">Concrete</option>
+        <option value="950426180" name="MaterialDirtSnowStairs">SnowStairs</option>
+        <option value="976632406" name="MaterialWeaponBlockBladeMedium">MaterialWeaponBlockBladeMedium</option>
+        <option value="1024582599" name="Material_Water">Water</option>
+        <option value="1035078235" name="MaterialMetalArmorLight">ArmorLight</option>
+        <option value="1066046129" name="DLC04_Material_ArcadeSledBall_Track">DLC04_Material_ArcadeSledBall_Track</option>
+        <option value="1124183901" name="MaterialActorSkinLarge">ActorSkinLarge</option>
+        <option value="1138619501" name="MaterialSubwayGate">MaterialSubwayGate</option>
+        <option value="1185452450" name="MaterialWeaponRifleLarge">MaterialWeaponRifleLarge</option>
+        <option value="1201612612" name="MaterialWeaponRifle">MaterialWeaponRifle</option>
+        <option value="1269739668" name="MaterialMetalSign">MaterialMetalSign</option>
+        <option value="1317396055" name="MaterialActorMetal">ActorMetal</option>
+        <option value="1322093133" name="MaterialOrganicLarge">OrganicLarge</option>
+        <option value="1340314491" name="MaterialDirtStairs">DirtStairs</option>
+        <option value="1395526401" name="MaterialActorInsect">ActorInsect</option>
+        <option value="1413383033" name="MaterialStoneBroken">StoneBroken</option>
+        <option value="1423343525" name="MaterialActorSkin">ActorSkin</option>
+        <option value="1439425931" name="MaterialStoneConcreteStairs">ConcreteStairs</option>
+        <option value="1447538522" name="MaterialPaperMagazine">MaterialPaperMagazine</option>
+        <option value="1486385281" name="MaterialDirtMud">Mud</option>
+        <option value="1499295757" name="DLC05MaterialBallTrackBall">DLC05MaterialBallTrackBall</option>
+        <option value="1501436081" name="MaterialWeaponCasingPistol">MaterialWeaponCasingPistol</option>
+        <option value="1526052914" name="MaterialActorMetalLarge">ActorMetalLarge</option>
+        <option value="1540336298" name="MaterialActorGlowing">ActorGlowing</option>
+        <option value="1543121159" name="MaterialMetalChairFolding">MaterialMetalChairFolding</option>
+        <option value="1603170414" name="MaterialGroundGrassBush">MaterialGroundGrassBush</option>
+        <option value="1745686114" name="MaterialDirtSandSandbag">Sandbag</option>
+        <option value="1782067423" name="MaterialStoneAsStairs">StoneAsStairs</option>
+        <option value="1825241013" name="DLC05MaterialBallTrackMetalFunnel">DLC05MaterialBallTrackMetalFunnel</option>
+        <option value="1848600814" name="MaterialGrass">Grass</option>
+        <option value="1865379056" name="MaterialActorSkinSmall">ActorSkinSmall</option>
+        <option value="1868386674" name="MaterialRubberTire">MaterialRubberTire</option>
+        <option value="1879074862" name="MaterialWoodStairs">WoodStairs</option>
+        <option value="1887003409" name="MaterialStoneSubwayPillarLarge">MaterialStoneSubwayPillarLarge</option>
+        <option value="1905728123" name="DLC04_Material_ArcadeSledBall_Ball">DLC04_Material_ArcadeSledBall_Ball</option>
+        <option value="1923703986" name="MaterialWeaponBlockBluntMedium">WeaponBlockBlunt</option>
+        <option value="1949124673" name="MaterialMetalCoin">Coin</option>
+        <option value="1973249018" name="MaterialMetalBucket">MaterialMetalBucket</option>
+        <option value="1994095519" name="MaterialActorMetalSmall">ActorMetalSmall</option>
+        <option value="1998647255" name="MaterialMetalChain">CHAIN</option>
+        <option value="2002199878" name="MaterialMetalBarrelTrashCanOffice">MetalBarrelTrashCanOffice</option>
+        <option value="2029661776" name="MaterialActorMetalArmoredPower">ActorMetalArmoredPower</option>
+        <option value="2050332274" name="MaterialMetalBarrel">MetalBarrel</option>
+        <option value="2052480620" name="MaterialBaseball">MaterialBaseball</option>
+        <option value="2113564165" name="Material_Plastic">Plastic</option>
+        <option value="2168343821" name="MaterialDirtlSand">Sand</option>
+        <option value="2215730879" name="MaterialActorSkeleton">ActorSkeleton</option>
+        <option value="2216694923" name="MaterialActorMetalArmored">ActorArmored</option>
+        <option value="2219131696" name="MaterialWoodBroom">MaterialWoodBroom</option>
+        <option value="2253994566" name="MaterialStoneHeavy">StoneHeavy</option>
+        <option value="2262304622" name="MaterialWeaponBlockBladeSmall">MaterialWeaponBlockBladeSmall</option>
+        <option value="2276150428" name="MaterialStoneBoulderLarge">StoneBoulderLarge</option>
+        <option value="2285410059" name="Material_Paper">Paper</option>
+        <option value="2377431615" name="MaterialActorGhost">ActorGhost</option>
+        <option value="2420474045" name="DLC05MaterialBallTrackMetal">DLC05MaterialBallTrackMetal</option>
+        <option value="2459239824" name="MaterialWaterPuddle">WaterPuddle</option>
+        <option value="2474963416" name="MaterialOtherBasket">Basket</option>
+        <option value="2504525426" name="DLC03MaterialVRFloor">DLC03MaterialVRFloor</option>
+        <option value="2507079709" name="MaterialMetalWeight">MaterialMetalWeight</option>
+        <option value="2519395573" name="MaterialStoneStairs">StoneStairs</option>
+        <option value="2534329404" name="MaterialGlassStairs">GlassStairs</option>
+        <option value="2605587041" name="MaterialOtherBone">MaterialOtherBone</option>
+        <option value="2608397368" name="DLC03MaterialMetalBearTrap">DLC03MaterialMetalBearTrap</option>
+        <option value="2674265083" name="MaterialMetalCanTin">MaterialMetalCanTin</option>
+        <option value="2716293208" name="MaterialCeramicCoffeeMug">MaterialCeramicCoffeeMug</option>
+        <option value="2853713344" name="MaterialWoodBoard">MaterialWoodBoard</option>
+        <option value="2861019322" name="Material_Debug">debug</option>
+        <option value="2877656881" name="MaterialStoneBoulderSmall">StoneBoulderSmall</option>
+        <option value="2900281814" name="MaterialOrganicMeat">Meat</option>
+        <option value="2908408722" name="MaterialGroundTileVinyl">MaterialGroundTileVinyl</option>
+        <option value="2925203401" name="MaterialMetalShieldHeavy">ShieldHeavy</option>
+        <option value="2926148967" name="MaterialGrassStairs">GrassStairs</option>
+        <option value="2963595456" name="MaterialMetalShoppingCart">MaterialMetalShoppingCart</option>
+        <option value="2973353357" name="MaterialWeaponMetalGrenade">MaterialWeaponMetalGrenade</option>
+        <option value="2974920155" name="Material_Organic">Organic</option>
+        <option value="2988283556" name="MaterialMetalStairsB">MaterialMetalStairs</option>
+        <option value="2993292432" name="MaterialMetalAuto">MaterialMetalAuto</option>
+        <option value="2993325253" name="MaterialMetalHollow">MetalHollow</option>
+        <option value="3028667025" name="Material_Other">OtherParent</option>
+        <option value="3103724712" name="MaterialActorSynthGen1">MaterialActorSynthGen1</option>
+        <option value="3105913924" name="MaterialPaperBoxCardboard">MaterialPaperBoxCardboard</option>
+        <option value="3106094762" name="Material_Dirt">Dirt</option>
+        <option value="3114373106" name="MaterialRubberBall">MaterialRubberBall</option>
+        <option value="3178027915" name="MaterialWeaponMetalBlunt2Hand">WeaponBlunt2Hand</option>
+        <option value="3184958832" name="MaterialGroundDirtLeaves">MaterialGroundDirtLeaves</option>
+        <option value="3207358594" name="MaterialWeaponCasingMinigun">MaterialWeaponCasingMinigun</option>
+        <option value="3211798881" name="MaterialMetalShieldLight">ShieldLight</option>
+        <option value="3218036415" name="MaterialPaperBoxSmall">MaterialPaperBoxSmall</option>
+        <option value="3236651581" name="MaterialMetalStairs">MetalStairs</option>
+        <option value="3251579835" name="MaterialStoneBoulderMedium">StoneBoulderMedium</option>
+        <option value="3284711549" name="MaterialWeaponMetalBlade1Hand">MaterialWeaponMetalBlade1Hand</option>
+        <option value="3354927426" name="MaterialActorInsectWing">Insect Wing</option>
+        <option value="3378519871" name="MaterialMetalBarrelTrashCan">MetalBarrelTrashCan</option>
+        <option value="3403586657" name="MaterialWoodLightBarrel">WoodBarrel</option>
+        <option value="3481395209" name="MaterialWoodHeavy">WoodHeavy</option>
+        <option value="3485918636" name="MaterialWeaponCasingRifle">MaterialWeaponCasingRifle</option>
+        <option value="3504249533" name="MaterialBodyBone">MaterialBodyBone</option>
+        <option value="3626158119" name="Material_Casing">MaterialWeaponCasing</option>
+        <option value="3639674437" name="Material_Weapon">Weapon</option>
+        <option value="3699571270" name="MaterialWeaponCasingShotgun">MaterialWeaponCasingShotgun</option>
+        <option value="3735733921" name="MaterialWoodLight">WoodLight</option>
+        <option value="3736463754" name="MaterialMetalGateVault">MaterialMetalGateVault</option>
+        <option value="3739830338" name="Material_Glass">Glass</option>
+        <option value="3741512247" name="Material_Stone">Stone</option>
+        <option value="3793849624" name="MaterialWoodAsStairs">WoodAsStairs</option>
+        <option value="3824112521" name="Material_Actor">ActorGeneric</option>
+        <option value="3839073443" name="Material_Cloth">Cloth</option>
+        <option value="3845715931" name="MaterialMetalLight">MetalLight</option>
+        <option value="3877172525" name="MaterialInsectFloor">InsectFloor</option>
+        <option value="3895166727" name="MaterialWard">WARD</option>
+        <option value="3899176889" name="MaterialGroundMetalA">MaterialGroundMetalA</option>
+        <option value="3934839107" name="MaterialOtherWeb">Web</option>
+        <option value="3936451629" name="MaterialPaperBook">Book</option>
+        <option value="4005220376" name="MaterialMetalGasLine">MaterialMetalGasLine</option>
+        <option value="4013367152" name="MaterialMetalPotsPans">PotsPans</option>
+        <option value="4028041609" name="MaterialClothCarpet">Carpet</option>
+        <option value="4050795553" name="MaterialStoneBrick">Brick</option>
+        <option value="4094939507" name="MaterialMetalHeavy">MetalHeavy</option>
+        <option value="4126576412" name="MaterialMetalLunchbox">MaterialMetalLunchbox</option>
+        <option value="4146539321" name="MaterialWeaponPistol">MaterialWeaponPistol</option>
+        <option value="4162286078" name="DLC04_Material_RubberBasketBall">DLC04_Material_RubberBasketBall</option>
+        <option value="4198749890" name="MaterialActorInsectSmall">ActorInsectSmall</option>
+        <option value="4207714651" name="MaterialWeaponMetalBlunt1Hand">WeaponBlunt1Hand</option>
+        <option value="4288341836" name="MaterialActorMetalArmoredCrab">ActorArmoredCrab</option>
+        <option value="4294094670" name="MaterialGroundTileVinylSanctuaryHills">MaterialGroundTileVinylSanctuaryHills</option>
+    </enum>
+
+    <enum name="Fallout76HavokMaterial" storage="uint" versions="V20_2_0_7_F76 V20_2_0_7_STF">
+        Bethesda Havok. Material descriptor for a Havok shape in Fallout 76.
+        <option value="0" name="FO76_MAT_NONE">Invalid</option>
+        <option value="26782757" name="MaterialMetalSolidAxe1Hand">MaterialMetalSolidAxe1Hand</option>
+        <option value="69730436" name="MaterialPlasticBin">MaterialPlasticBin</option>
+        <option value="71178380" name="MaterialMetalVertibirdChassisSmall">MaterialMetalVertibirdChassisSmall</option>
+        <option value="84873873" name="MaterialWaterMtnRemovalSludge">MaterialWaterMtnRemovalSludge</option>
+        <option value="89138953" name="MaterialSoccerBall">MaterialSoccerBall</option>
+        <option value="104858580" name="Material_Metal">Material_Metal</option>
+        <option value="172611777" name="MaterialGlassBottleSmall">MaterialGlassBottleSmall</option>
+        <option value="186875565" name="Material__GenericMaster">Material__GenericMaster</option>
+        <option value="238888479" name="MaterialWeaponBowsStaves">MaterialWeaponBowsStaves</option>
+        <option value="293847076" name="MaterialPlasticBowlingBall">MaterialPlasticBowlingBall</option>
+        <option value="301080923" name="DLC05MaterialBallTrackWood">DLC05MaterialBallTrackWood</option>
+        <option value="327411453" name="MaterialMetalTray">MaterialMetalTray</option>
+        <option value="341181474" name="MaterialWoodCrate">MaterialWoodCrate</option>
+        <option value="361241712" name="MaterialWeaponMetalBlade1HandSmall">MaterialWeaponMetalBlade1HandSmall</option>
+        <option value="398949039" name="MaterialDirtSnow">MaterialDirtSnow</option>
+        <option value="428587608" name="MaterialDirtGravel">MaterialDirtGravel</option>
+        <option value="450934209" name="MaterialWeaponMetalMine">MaterialWeaponMetalMine</option>
+        <option value="493553910" name="MaterialGlassBottle">MaterialGlassBottle</option>
+        <option value="500811281" name="Material_Wood">Material_Wood</option>
+        <option value="504699171" name="MaterialWoodLightArrow">MaterialWoodLightArrow</option>
+        <option value="591247106" name="MaterialOrganicSkin">MaterialOrganicSkin</option>
+        <option value="630687820" name="MaterialClothCushion">MaterialClothCushion</option>
+        <option value="657718602" name="MaterialPlasticLarge">MaterialPlasticLarge</option>
+        <option value="668408902" name="MaterialOrganicInsect">MaterialOrganicInsect</option>
+        <option value="672193313" name="MaterialMetalVertibirdChassisLarge">MaterialMetalVertibirdChassisLarge</option>
+        <option value="678931996" name="MaterialOrganicCranberrySundewTendril2">MaterialOrganicCranberrySundewTendril2</option>
+        <option value="694643242" name="MaterialWeaponMetalBlade2Hand">MaterialWeaponMetalBlade2Hand</option>
+        <option value="706373264" name="MaterialMetalSolid">MaterialMetalSolid</option>
+        <option value="747607327" name="MaterialPlasticTrafficCone">MaterialPlasticTrafficCone</option>
+        <option value="748236019" name="MaterialMetalArmorHeavy">MaterialMetalArmorHeavy</option>
+        <option value="774657257" name="MaterialClipboard">MaterialClipboard</option>
+        <option value="790260229" name="MaterialOrganicCranberrySundewTendril6">MaterialOrganicCranberrySundewTendril6</option>
+        <option value="811073006" name="MaterialStoneBrokenStairs">MaterialStoneBrokenStairs</option>
+        <option value="873356572" name="MaterialDirtSnowIce">MaterialDirtSnowIce</option>
+        <option value="885278459" name="MaterialGlassCeramicMedium">MaterialGlassCeramicMedium</option>
+        <option value="911716378" name="MaterialStoneConcrete">MaterialStoneConcrete</option>
+        <option value="950426180" name="MaterialDirtSnowStairs">MaterialDirtSnowStairs</option>
+        <option value="976632406" name="MaterialWeaponBlockBladeMedium">MaterialWeaponBlockBladeMedium</option>
+        <option value="1024582599" name="Material_Water">Material_Water</option>
+        <option value="1035078235" name="MaterialMetalArmorLight">MaterialMetalArmorLight</option>
+        <option value="1066046129" name="DLC04_Material_ArcadeSledBall_Track">DLC04_Material_ArcadeSledBall_Track</option>
+        <option value="1124183901" name="MaterialActorSkinLarge">MaterialActorSkinLarge</option>
+        <option value="1138619501" name="MaterialSubwayGate">MaterialSubwayGate</option>
+        <option value="1185452450" name="MaterialWeaponRifleLarge">MaterialWeaponRifleLarge</option>
+        <option value="1201612612" name="MaterialWeaponRifle">MaterialWeaponRifle</option>
+        <option value="1269739668" name="MaterialMetalSign">MaterialMetalSign</option>
+        <option value="1299745439" name="MaterialActorScorchBeast">MaterialActorScorchBeast</option>
+        <option value="1317396055" name="MaterialActorMetal">MaterialActorMetal</option>
+        <option value="1322093133" name="MaterialOrganicLarge">MaterialOrganicLarge</option>
+        <option value="1333905066" name="MaterialWeaponBlockUnarmed">MaterialWeaponBlockUnarmed</option>
+        <option value="1340314491" name="MaterialDirtStairs">MaterialDirtStairs</option>
+        <option value="1395526401" name="MaterialActorInsect">MaterialActorInsect</option>
+        <option value="1413383033" name="MaterialStoneBroken">MaterialStoneBroken</option>
+        <option value="1423343525" name="MaterialActorSkin">MaterialActorSkin</option>
+        <option value="1439425931" name="MaterialStoneConcreteStairs">MaterialStoneConcreteStairs</option>
+        <option value="1447538522" name="MaterialPaperMagazine">MaterialPaperMagazine</option>
+        <option value="1486385281" name="MaterialDirtMud">MaterialDirtMud</option>
+        <option value="1499295757" name="DLC05MaterialBallTrackBall">DLC05MaterialBallTrackBall</option>
+        <option value="1501436081" name="MaterialWeaponCasingPistol">MaterialWeaponCasingPistol</option>
+        <option value="1526052914" name="MaterialActorMetalLarge">MaterialActorMetalLarge</option>
+        <option value="1540336298" name="MaterialActorGlowing">MaterialActorGlowing</option>
+        <option value="1543121159" name="MaterialMetalChairFolding">MaterialMetalChairFolding</option>
+        <option value="1601216138" name="MaterialOrganicCranberrySundewTendril3">MaterialOrganicCranberrySundewTendril3</option>
+        <option value="1603170414" name="MaterialGroundGrassBush">MaterialGroundGrassBush</option>
+        <option value="1605891008" name="MaterialWorkshopDestructionWoodA">MaterialWorkshopDestructionWoodA</option>
+        <option value="1745686114" name="MaterialDirtSandSandbag">MaterialDirtSandSandbag</option>
+        <option value="1754110989" name="MaterialMetalVertibot">MaterialMetalVertibot</option>
+        <option value="1782067423" name="MaterialStoneAsStairs">MaterialStoneAsStairs</option>
+        <option value="1825241013" name="DLC05MaterialBallTrackMetalFunnel">DLC05MaterialBallTrackMetalFunnel</option>
+        <option value="1848600814" name="MaterialDirtGrass">MaterialDirtGrass</option>
+        <option value="1865379056" name="MaterialActorSkinSmall">MaterialActorSkinSmall</option>
+        <option value="1868386674" name="MaterialRubberTire">MaterialRubberTire</option>
+        <option value="1879074862" name="MaterialWoodStairs">MaterialWoodStairs</option>
+        <option value="1887003409" name="MaterialStoneSubwayPillarLarge">MaterialStoneSubwayPillarLarge</option>
+        <option value="1905728123" name="DLC04_Material_ArcadeSledBall_Ball">DLC04_Material_ArcadeSledBall_Ball</option>
+        <option value="1923703986" name="MaterialWeaponBlockBluntMedium">MaterialWeaponBlockBluntMedium</option>
+        <option value="1949124673" name="MaterialMetalCoin">MaterialMetalCoin</option>
+        <option value="1973249018" name="MaterialMetalBucket">MaterialMetalBucket</option>
+        <option value="1994095519" name="MaterialActorMetalSmall">MaterialActorMetalSmall</option>
+        <option value="1998647255" name="MaterialMetalChain">MaterialMetalChain</option>
+        <option value="2002199878" name="MaterialMetalBarrelTrashCanOffice">MaterialMetalBarrelTrashCanOffice</option>
+        <option value="2029661776" name="MaterialActorMetalArmoredPower">MaterialActorMetalArmoredPower</option>
+        <option value="2050332274" name="MaterialMetalBarrel">MaterialMetalBarrel</option>
+        <option value="2052480620" name="MaterialBaseball">MaterialBaseball</option>
+        <option value="2098098665" name="MaterialWorkshopDestructionMetalA">MaterialWorkshopDestructionMetalA</option>
+        <option value="2113564165" name="Material_Plastic">Material_Plastic</option>
+        <option value="2168343821" name="MaterialDirtlSand">MaterialDirtlSand</option>
+        <option value="2215730879" name="MaterialActorSkeleton">MaterialActorSkeleton</option>
+        <option value="2216694923" name="MaterialActorMetalArmored">MaterialActorMetalArmored</option>
+        <option value="2219131696" name="MaterialWoodBroom">MaterialWoodBroom</option>
+        <option value="2220113522" name="MaterialWorkshopDestructionConcA">MaterialWorkshopDestructionConcA</option>
+        <option value="2253994566" name="MaterialStoneHeavy">MaterialStoneHeavy</option>
+        <option value="2262304622" name="MaterialWeaponBlockBladeSmall">MaterialWeaponBlockBladeSmall</option>
+        <option value="2276150428" name="MaterialStoneBoulderLarge">MaterialStoneBoulderLarge</option>
+        <option value="2285410059" name="Material_Paper">Material_Paper</option>
+        <option value="2377431615" name="MaterialActorGhost">MaterialActorGhost</option>
+        <option value="2420474045" name="DLC05MaterialBallTrackMetal">DLC05MaterialBallTrackMetal</option>
+        <option value="2459239824" name="MaterialWaterPuddle">MaterialWaterPuddle</option>
+        <option value="2474963416" name="MaterialOtherBasket">MaterialOtherBasket</option>
+        <option value="2504525426" name="DLC03Material_VRFloor">DLC03Material_VRFloor</option>
+        <option value="2507079709" name="MaterialMetalWeight">MaterialMetalWeight</option>
+        <option value="2519395573" name="MaterialStoneStairs">MaterialStoneStairs</option>
+        <option value="2534329404" name="MaterialGlassStairs">MaterialGlassStairs</option>
+        <option value="2605587041" name="MaterialOtherBone">MaterialOtherBone</option>
+        <option value="2608397368" name="DLC03MaterialMetalBearTrap">DLC03MaterialMetalBearTrap</option>
+        <option value="2674265083" name="MaterialMetalCanTin">MaterialMetalCanTin</option>
+        <option value="2716293208" name="MaterialCeramicCoffeeMug">MaterialCeramicCoffeeMug</option>
+        <option value="2853713344" name="MaterialWoodBoard">MaterialWoodBoard</option>
+        <option value="2861019322" name="Material_Debug">Material_Debug</option>
+        <option value="2877656881" name="MaterialStoneBoulderSmall">MaterialStoneBoulderSmall</option>
+        <option value="2900281814" name="MaterialOrganicMeat">MaterialOrganicMeat</option>
+        <option value="2908408722" name="MaterialGroundTileVinyl">MaterialGroundTileVinyl</option>
+        <option value="2923982215" name="MaterialWindChimes">MaterialWindChimes</option>
+        <option value="2925203401" name="MaterialMetalShieldHeavy">MaterialMetalShieldHeavy</option>
+        <option value="2926148967" name="MaterialDirtGrassStairs">MaterialDirtGrassStairs</option>
+        <option value="2963595456" name="MaterialMetalShoppingCart">MaterialMetalShoppingCart</option>
+        <option value="2973353357" name="MaterialWeaponMetalGrenade">MaterialWeaponMetalGrenade</option>
+        <option value="2974920155" name="Material_Organic">Material_Organic</option>
+        <option value="2977890214" name="MaterialOrganicCranberrySundewTendril1">MaterialOrganicCranberrySundewTendril1</option>
+        <option value="2988283556" name="MaterialMetalStairsB">MaterialMetalStairsB</option>
+        <option value="2993292432" name="MaterialMetalAuto">MaterialMetalAuto</option>
+        <option value="2993325253" name="MaterialMetalHollow">MaterialMetalHollow</option>
+        <option value="3017833785" name="MaterialPlasticPartyCup">MaterialPlasticPartyCup</option>
+        <option value="3028667025" name="Material_Other">Material_Other</option>
+        <option value="3054713791" name="MaterialOrganicCranberrySundewTendril5">MaterialOrganicCranberrySundewTendril5</option>
+        <option value="3103724712" name="MaterialActorSynthGen1">MaterialActorSynthGen1</option>
+        <option value="3105913924" name="MaterialPaperBoxCardboard">MaterialPaperBoxCardboard</option>
+        <option value="3106094762" name="Material_Dirt">Material_Dirt</option>
+        <option value="3114373106" name="MaterialRubberBall">MaterialRubberBall</option>
+        <option value="3178027915" name="MaterialWeaponMetalBlunt2Hand">MaterialWeaponMetalBlunt2Hand</option>
+        <option value="3184958832" name="MaterialGroundDirtLeaves">MaterialGroundDirtLeaves</option>
+        <option value="3207358594" name="MaterialWeaponCasingMinigun">MaterialWeaponCasingMinigun</option>
+        <option value="3211798881" name="MaterialMetalShieldLight">MaterialMetalShieldLight</option>
+        <option value="3218036415" name="MaterialPaperBoxSmall">MaterialPaperBoxSmall</option>
+        <option value="3236651581" name="MaterialMetalStairs">MaterialMetalStairs</option>
+        <option value="3239316265" name="MaterialOrganicCranberrySundewTendril4">MaterialOrganicCranberrySundewTendril4</option>
+        <option value="3251579835" name="MaterialStoneBoulderMedium">MaterialStoneBoulderMedium</option>
+        <option value="3272232016" name="MaterialTrash">MaterialTrash</option>
+        <option value="3284711549" name="MaterialWeaponMetalBlade1Hand">MaterialWeaponMetalBlade1Hand</option>
+        <option value="3354927426" name="MaterialActorInsectWing">MaterialActorInsectWing</option>
+        <option value="3378519871" name="MaterialMetalBarrelTrashCan">MaterialMetalBarrelTrashCan</option>
+        <option value="3403586657" name="MaterialWoodLightBarrel">MaterialWoodLightBarrel</option>
+        <option value="3435631236" name="MaterialTableTennisBall">MaterialTableTennisBall</option>
+        <option value="3481395209" name="MaterialWoodHeavy">MaterialWoodHeavy</option>
+        <option value="3485918636" name="MaterialWeaponCasingRifle">MaterialWeaponCasingRifle</option>
+        <option value="3504249533" name="MaterialBodyBone">MaterialBodyBone</option>
+        <option value="3626158119" name="Material_Casing">Material_Casing</option>
+        <option value="3639674437" name="Material_Weapon">Material_Weapon</option>
+        <option value="3699571270" name="MaterialWeaponCasingShotgun">MaterialWeaponCasingShotgun</option>
+        <option value="3735733921" name="MaterialWoodLight">MaterialWoodLight</option>
+        <option value="3736463754" name="MaterialMetalGateVault">MaterialMetalGateVault</option>
+        <option value="3739830338" name="Material_Glass">Material_Glass</option>
+        <option value="3741512247" name="Material_Stone">Material_Stone</option>
+        <option value="3793849624" name="MaterialWoodAsStairs">MaterialWoodAsStairs</option>
+        <option value="3824112521" name="Material_Actor">Material_Actor</option>
+        <option value="3839073443" name="Material_Cloth">Material_Cloth</option>
+        <option value="3845715931" name="MaterialMetalLight">MaterialMetalLight</option>
+        <option value="3877172525" name="MaterialInsectFloor">MaterialInsectFloor</option>
+        <option value="3895166727" name="MaterialWard">MaterialWard</option>
+        <option value="3899176889" name="MaterialGroundMetalA">MaterialGroundMetalA</option>
+        <option value="3934839107" name="MaterialOtherWeb">MaterialOtherWeb</option>
+        <option value="3936451629" name="MaterialPaperBook">MaterialPaperBook</option>
+        <option value="4005220376" name="MaterialMetalGasLine">MaterialMetalGasLine</option>
+        <option value="4013367152" name="MaterialMetalPotsPans">MaterialMetalPotsPans</option>
+        <option value="4028041609" name="MaterialClothCarpet">MaterialClothCarpet</option>
+        <option value="4050795553" name="MaterialStoneBrick">MaterialStoneBrick</option>
+        <option value="4094939507" name="MaterialMetalHeavy">MaterialMetalHeavy</option>
+        <option value="4126576412" name="MaterialMetalLunchbox">MaterialMetalLunchbox</option>
+        <option value="4146539321" name="MaterialWeaponPistol">MaterialWeaponPistol</option>
+        <option value="4162286078" name="DLC04_Material_RubberBasketBall">DLC04_Material_RubberBasketBall</option>
+        <option value="4183287022" name="MaterialRubberBalloon">MaterialRubberBalloon</option>
+        <option value="4198749890" name="MaterialActorInsectSmall">MaterialActorInsectSmall</option>
+        <option value="4207714651" name="MaterialWeaponMetalBlunt1Hand">MaterialWeaponMetalBlunt1Hand</option>
+        <option value="4218371855" name="MaterialWeaponTomahawk">MaterialWeaponTomahawk</option>
+        <option value="4288341836" name="MaterialActorMetalArmoredCrab">MaterialActorMetalArmoredCrab</option>
+        <option value="4294094670" name="MaterialGroundTileVinylSanctuaryHills">MaterialGroundTileVinylSanctuaryHills</option>
     </enum>
 
     <enum name="OblivionLayer" storage="byte" versions="#BETHESDA#">
@@ -786,7 +1129,7 @@
         <option value="43" name="FOL_NULL">Null (white)</option>
     </enum>
 
-    <enum name="SkyrimLayer" storage="byte" versions="#SKY_AND_LATER#">
+    <enum name="SkyrimLayer" storage="byte" versions="V20_2_0_7_SKY V20_2_0_7_SSE">
         Bethesda Havok. Describes the collision layer a body belongs to in Skyrim.
         <option value="0" name="SKYL_UNIDENTIFIED">Unidentified</option>
         <option value="1" name="SKYL_STATIC">Static</option>
@@ -843,6 +1186,132 @@
         <option value="52" name="SKYL_LIVING_AND_DEAD_ACTORS">Living And Dead Actors</option>
         <option value="53" name="SKYL_DETECTION">Detection</option>
         <option value="54" name="SKYL_TRAP_TRIGGER">Trap Trigger</option>
+    </enum>
+
+    <enum name="Fallout4Layer" storage="byte" versions="V20_2_0_7_FO4 V20_2_0_7_FO4_2">
+        Bethesda Havok. Describes the collision layer a body belongs to in Fallout 4.
+        <option value="0" name="FO4_UNIDENTIFIED">Unidentified</option>
+        <option value="1" name="FO4_STATIC">Static</option>
+        <option value="2" name="FO4_ANIMSTATIC">Anim Static</option>
+        <option value="3" name="FO4_TRANSPARENT">Transparent</option>
+        <option value="4" name="FO4_CLUTTER">Clutter. Object with this layer will float on water surface.</option>
+        <option value="5" name="FO4_WEAPON">Weapon</option>
+        <option value="6" name="FO4_PROJECTILE">Projectile</option>
+        <option value="7" name="FO4_SPELL">Spell</option>
+        <option value="8" name="FO4_BIPED">Biped. Seems to apply to all creatures/NPCs</option>
+        <option value="9" name="FO4_TREES">Trees</option>
+        <option value="10" name="FO4_PROPS">Props</option>
+        <option value="11" name="FO4_WATER">Water</option>
+        <option value="12" name="FO4_TRIGGER">Trigger</option>
+        <option value="13" name="FO4_TERRAIN">Terrain</option>
+        <option value="14" name="FO4_TRAP">Trap</option>
+        <option value="15" name="FO4_NONCOLLIDABLE">NonCollidable</option>
+        <option value="16" name="FO4_CLOUD_TRAP">CloudTrap</option>
+        <option value="17" name="FO4_GROUND">Ground. It seems that produces no sound when collide.</option>
+        <option value="18" name="FO4_PORTAL">Portal</option>
+        <option value="19" name="FO4_DEBRIS_SMALL">Debris Small</option>
+        <option value="20" name="FO4_DEBRIS_LARGE">Debris Large</option>
+        <option value="21" name="FO4_ACOUSTIC_SPACE">Acoustic Space</option>
+        <option value="22" name="FO4_ACTORZONE">Actor Zone</option>
+        <option value="23" name="FO4_PROJECTILEZONE">Projectile Zone</option>
+        <option value="24" name="FO4_GASTRAP">Gas Trap</option>
+        <option value="25" name="FO4_SHELLCASING">Shell Casing</option>
+        <option value="26" name="FO4_TRANSPARENT_SMALL">Transparent Small</option>
+        <option value="27" name="FO4_INVISIBLE_WALL">Invisible Wall</option>
+        <option value="28" name="FO4_TRANSPARENT_SMALL_ANIM">Transparent Small Anim</option>
+        <option value="29" name="FO4_CLUTTER_LARGE">Clutter Large</option>
+        <option value="30" name="FO4_CHARCONTROLLER">Char Controller</option>
+        <option value="31" name="FO4_STAIRHELPER">Stair Helper</option>
+        <option value="32" name="FO4_DEADBIP">Dead Bip</option>
+        <option value="33" name="FO4_BIPED_NO_CC">Biped No CC</option>
+        <option value="34" name="FO4_AVOIDBOX">Avoid Box</option>
+        <option value="35" name="FO4_COLLISIONBOX">Collision Box</option>
+        <option value="36" name="FO4_CAMERASHPERE">Camera Sphere</option>
+        <option value="37" name="FO4_DOORDETECTION">Door Detection</option>
+        <option value="38" name="FO4_CONEPROJECTILE">Cone Projectile</option>
+        <option value="39" name="FO4_CAMERA">Camera Pick</option>
+        <option value="40" name="FO4_ITEMPICKER">Item Pick</option>
+        <option value="41" name="FO4_LINEOFSIGHT">Line of Sight</option>
+        <option value="42" name="FO4_PATHPICK">Path Pick</option>
+        <option value="43" name="FO4_CUSTOMPICK1">Custom Pick 1</option>
+        <option value="44" name="FO4_FX_COLLIDER">FX Collider</option>
+        <option value="45" name="FO4_SPELLEXPLOSION">Spell Explosion</option>
+        <option value="46" name="FO4_DROPPINGPICK">Dropping Pick</option>
+        <option value="47" name="FO4_DEADACTORZONE">This layer only collides with dead actors.</option>
+        <option value="48" name="FO4_FALLING_TRAP">Falling Trap</option>
+        <option value="49" name="FO4_NAVCUT">Navmesh Cut</option>
+        <option value="50" name="FO4_CRITTER">Custom layer used for critters. Should receive hits from weapons/spells but not collide with characters or the world.</option>
+        <option value="51" name="FO4_SPELL_TRIGGER">Only spells collide with this for triggering happenstances.</option>
+        <option value="52" name="FO4_LIVING_AND_DEAD_ACTORS">triggers on both living and dead actors</option>
+        <option value="53" name="FO4_DETECTION"></option>
+        <option value="54" name="FO4_TRAP_TRIGGER">This is a trigger type that should only look for living actors, for trap trigger boxes.</option>
+        <option value="55" name="FO4_CLUTTER_NO_NAVCUT">Clutter NoNavCut</option>
+        <option value="56" name="FO4_CHARBUMPER">Bumper that is attached to the character controller</option>
+    </enum>
+
+    <enum name="Fallout76Layer" storage="byte" versions="V20_2_0_7_F76 V20_2_0_7_STF">
+        Bethesda Havok. Describes the collision layer a body belongs to in Fallout 76.
+        <option value="0"  name="FO76_UNIDENTIFIED"></option>
+        <option value="1"  name="FO76_STATIC">Static world object.</option>
+        <option value="2"  name="FO76_ANIMSTATIC">Animated static objects.</option>
+        <option value="3"  name="FO76_TRANSPARENT">Static object that is very thin (No projectile collision).</option>
+        <option value="4"  name="FO76_CLUTTER">Generic world clutter.</option>
+        <option value="5"  name="FO76_WEAPON">Non-projectile weapon.</option>
+        <option value="6"  name="FO76_PROJECTILE">Non-spell projectile.</option>
+        <option value="7"  name="FO76_SPELL">Spell</option>
+        <option value="8"  name="FO76_BIPED">It's a biped</option>
+        <option value="9"  name="FO76_TREES">All Flora including trees, bushes, weeds and flowers.</option>
+        <option value="10" name="FO76_PROPS">Signs, chains, flags and other static animatable objects.</option>
+        <option value="11" name="FO76_WATER">A water area phantom.</option>
+        <option value="12" name="FO76_TRIGGER">A trigger.</option>
+        <option value="13" name="FO76_TERRAIN">Terrain objects such as boulders and mountains.</option>
+        <option value="14" name="FO76_TRAP">Traps</option>
+        <option value="15" name="FO76_NONCOLLIDABLE">Object the is not collidable with character.</option>
+        <option value="16" name="FO76_CLOUDTRAP">Trap that is a cloud and doesn't have physical presence.</option>
+        <option value="17" name="FO76_GROUND">Terrain from the Height Field Map.</option>
+        <option value="18" name="FO76_PORTAL">Portal layer (same setup as noncollidable, but used differently by game code)</option>
+        <option value="19" name="FO76_DEBRIS_SMALL">Small debris collide with fewer things than large debris do</option>
+        <option value="20" name="FO76_DEBRIS_LARGE">Debris objects are junk that we don't really care about. We can set them to the debris moiontype</option>
+        <option value="21" name="FO76_ACOUSTIC_SPACE">Volumes in which sound is manipulated</option>
+        <option value="22" name="FO76_ACTORZONE">Trigger type for stream-lined actor only trigger boxes.</option>
+        <option value="23" name="FO76_PROJECTILEZONE"></option>
+        <option value="24" name="FO76_GASTRAP">Hybrid layer acts as a projectile zone and a trigger</option>
+        <option value="25" name="FO76_SHELLCASING">special shell casing layer for casing sounds</option>
+        <option value="26" name="FO76_TRANSPARENT_SMALL">Static object that is very thin (only collides with larger projectiles).</option>
+        <option value="27" name="FO76_INVISIBLE_WALL">blocks physical object but not LOS</option>
+        <option value="28" name="FO76_TRANSPARENT_SMALL_ANIM">same as L_TRANSPARENT_SMALL but animated.</option>
+        <option value="29" name="FO76_CLUTTER_LARGE">Generic large world clutter.</option>
+        <option value="30" name="FO76_CHARCONTROLLER">A character controller</option>
+        <option value="31" name="FO76_STAIRHELPER">A helper object to smooth character controller and footIK traversal of steps.</option>
+        <option value="32" name="FO76_DEADBIP">We need this to differentiate between keyframed + dynamic Bipeds</option>
+        <option value="33" name="FO76_BIPED_NO_CC">We need this to allow collision with the actor's ragdoll instead of its character controller.</option>
+        <option value="34" name="FO76_AVOIDBOX">Avoid box cast in front of the character.</option>
+        <option value="35" name="FO76_COLLISIONBOX">Broad collision phantom.</option>
+        <option value="36" name="FO76_CAMERASPHERE">Sphere around the camera -- collides only with phantom objects</option>
+        <option value="37" name="FO76_DOORDETECTION">Layer used for the phantoms in front of actors so that they can detect animated doors.</option>
+        <option value="38" name="FO76_CONEPROJECTILE">Used for Cone Projectiles, which ignore hits with certain collision layers.</option>
+        <option value="39" name="FO76_CAMERA">Player camera.</option>
+        <option value="40" name="FO76_ITEMPICKER">Pick clutter and other items of interest.</option>
+        <option value="41" name="FO76_LOS">Line of sight pick.</option>
+        <option value="42" name="FO76_PATHINGPICK">Pick for path smoothing and such</option>
+        <option value="43" name="FO76_DESTRUCTIBLE_ROOT_PROXY"></option>
+        <option value="44" name="FO76_SERVERAUTH_STRICT"></option>
+        <option value="45" name="FO76_SPELLEXPLOSION"></option>
+        <option value="46" name="FO76_DROPPINGPICK"></option>
+        <option value="47" name="FO76_DEADACTORZONE">This layer only collides with dead actors.</option>
+        <option value="48" name="FO76_TRIGGER_FALLINGTRAP">This trigger type is used for the falling traps and should get trigger events when it collides with any visible collidable.</option>
+        <option value="49" name="FO76_NAVCUT">Only for cutting namvesh.</option>
+        <option value="50" name="FO76_CRITTER">Custom layer used for critters. Should receive hits from weapons/spells but not collide with characters or the world.</option>
+        <option value="51" name="FO76_SPELLTRIGGER">Only spells collide with this for triggering happenstances.</option>
+        <option value="52" name="FO76_LIVING_AND_DEAD_ACTORS">triggers on both living and dead actors</option>
+        <option value="53" name="FO76_DETECTION"></option>
+        <option value="54" name="FO76_TRAP_TRIGGER">This is a trigger type that should only look for living actors, for trap trigger boxes.</option>
+        <option value="55" name="FO76_CLUTTER_NOCUT">Generic world clutter, that cannot cut Navmesh.</option>
+        <option value="56" name="FO76_CHARBUMPER">Bumper that is attached to the character controller</option>
+        <option value="57" name="FO76_FXCOLLIDER"></option>
+        <option value="58" name="FO76_BLOCKPICKING">Blocks cursor picking to objects beyond.</option>
+        <option value="59" name="FO76_PLAYERONLY">Confusing name. Blocks player and dead actors.</option>
+        <option value="60" name="FO76_PROJ_NO_COLLIDE_PROJ">Only collides with bare requirements. Does not collide on projectiles.</option>
     </enum>
 
     <enum name="BipedPart" storage="byte">
@@ -2351,7 +2820,9 @@
         Bethesda Havok. Collision filter info representing Layer, Flags, Part Number, and Group all combined into one uint.
         <field name="Layer" suffix="OB" type="OblivionLayer" default="OL_STATIC" until="20.0.0.5" vercond="#BSVER# #LT# 16">The layer the collision belongs to.</field>
         <field name="Layer" suffix="FO" type="Fallout3Layer" default="FOL_STATIC" vercond="(#VER# == 20.2.0.7) #AND# #NI_BS_LTE_FO3#">The layer the collision belongs to.</field>
-        <field name="Layer" suffix="SK" type="SkyrimLayer" default="SKYL_STATIC" vercond="(#VER# == 20.2.0.7) #AND# #BS_GT_FO3#">The layer the collision belongs to.</field>
+        <field name="Layer" suffix="SK" type="SkyrimLayer" default="SKYL_STATIC" vercond="(#VER# == 20.2.0.7) #AND# #BS_SKY_SSE#">The layer the collision belongs to.</field>
+        <field name="Layer" suffix="FO4" type="Fallout4Layer" default="FO4_STATIC" vercond="(#VER# == 20.2.0.7) #AND# #BS_FO4_2#">The layer the collision belongs to.</field>
+        <field name="Layer" suffix="F76" type="Fallout76Layer" default="FO76_STATIC" vercond="(#VER# == 20.2.0.7) #AND# #BS_GTE_F76#">The layer the collision belongs to.</field>
         <field name="Flags" type="CollisionFilterFlags" default="0" />
         <field name="Group" type="ushort" />
     </struct>
@@ -2361,7 +2832,9 @@
         <field name="Unknown Int" type="uint" until="10.0.1.2" />
         <field name="Material" suffix="OB" type="OblivionHavokMaterial" until="20.0.0.5" vercond="#BSVER# #LT# 16">The material of the shape.</field>
         <field name="Material" suffix="FO" type="Fallout3HavokMaterial" vercond="(#VER# == 20.2.0.7) #AND# #NI_BS_LTE_FO3#">The material of the shape.</field>
-        <field name="Material" suffix="SK" type="SkyrimHavokMaterial" vercond="(#VER# == 20.2.0.7) #AND# #BS_GT_FO3#">The material of the shape.</field>
+        <field name="Material" suffix="SK" type="SkyrimHavokMaterial" vercond="(#VER# == 20.2.0.7) #AND# #BS_SKY_SSE#">The material of the shape.</field>
+        <field name="Material" suffix="FO4" type="Fallout4HavokMaterial" vercond="(#VER# == 20.2.0.7) #AND# #BS_FO4_2#">The material of the shape.</field>
+        <field name="Material" suffix="F76" type="Fallout76HavokMaterial" vercond="(#VER# == 20.2.0.7) #AND# #BS_GTE_F76#">The material of the shape.</field>
     </struct>
 
     <struct name="hkSubPartData" module="BSHavok" versions="#BETHESDA#">

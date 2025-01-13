@@ -1,5 +1,4 @@
-#version 400 compatibility
-#extension GL_ARB_shader_texture_lod : require
+#version 410 core
 
 struct UVStream {
 	vec4	scaleAndOffset;
@@ -210,7 +209,7 @@ uniform samplerCube	CubeMap2;
 uniform bool	hasCubeMap;
 uniform bool	hasSpecular;
 
-uniform sampler2D	textureUnits[SF_NUM_TEXTURE_UNITS];
+uniform sampler2D	textureUnits[NUM_TEXTURE_UNITS];
 
 uniform vec4 parallaxOcclusionSettings;	// min. steps, max. steps, height scale, height offset
 // bit 0: alpha testing, bit 1: alpha blending
@@ -220,6 +219,8 @@ uniform	LayeredMaterial	lm;
 
 in vec3 LightDir;
 in vec3 ViewDir;
+
+in vec4 texCoord;
 
 in vec4 A;
 in vec4 C;
@@ -285,7 +286,7 @@ vec3 tonemap(vec3 x, float y)
 
 vec2 getTexCoord(in UVStream uvStream)
 {
-	vec2	offset = ( !uvStream.useChannelTwo ? gl_TexCoord[0].st : gl_TexCoord[0].pq );
+	vec2	offset = ( !uvStream.useChannelTwo ? texCoord.st : texCoord.pq );
 	return offset * uvStream.scaleAndOffset.xy + uvStream.scaleAndOffset.zw;
 }
 

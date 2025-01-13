@@ -102,7 +102,7 @@ QStandardItem * BSAModel::insertFolder( const QString & path, qsizetype pos1, qs
 		return invisibleRootItem();
 
 	QString	key( path.left( pos2 ) );
-	for ( auto i = folderMap.find( key ); i != folderMap.end(); )
+	if ( auto i = folderMap.find( key ); i != folderMap.end() )
 		return i.value();
 
 	qsizetype	i1 = path.lastIndexOf( QChar('/'), pos2 - 1 );

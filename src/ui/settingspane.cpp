@@ -385,6 +385,8 @@ SettingsRender::SettingsRender( QWidget * parent ) :
 	ui->setupUi( this );
 	SettingsDialog::registerPage( parent, ui->name->text() );
 
+	connect( ui->btnDetectMSAA, &QPushButton::clicked, this, &SettingsRender::detectMSAAMaxSamples );
+
 	auto color = [this]( const QString & str, ColorWheel * w, ColorLineEdit * e, const QColor & color ) {
 		e->setWheel( w, str );
 		w->setColor( color );
@@ -396,14 +398,15 @@ SettingsRender::SettingsRender( QWidget * parent ) :
 	color( "Background", ui->colorBackground, ui->background, QColor( 46, 46, 46 ) );
 	color( "Wireframe", ui->colorWireframe, ui->wireframe, QColor( 0, 255, 0 ) );
 	color( "Highlight", ui->colorHighlight, ui->highlight, QColor( 255, 255, 0 ) );
+	color( "Grid", ui->colorGrid, ui->gridColor, QColor( 99, 99, 99 ) );
 
 
-	auto alphaSlider = [this]( ColorWheel * c, ColorLineEdit * e, QHBoxLayout * l ) {
+	auto alphaSlider = [this]( ColorWheel * c, ColorLineEdit * e, QHBoxLayout * l, float a = 1.0f ) {
 		auto alpha = new AlphaSlider( Qt::Vertical );
 		alpha->setParent( this );
 
 		c->setAlpha( true );
-		e->setAlpha( 1.0 );
+		e->setAlpha( a );
 		l->addWidget( alpha );
 
 		connect( c, &ColorWheel::sigColor, alpha, &AlphaSlider::setColor );
@@ -416,6 +419,7 @@ SettingsRender::SettingsRender( QWidget * parent ) :
 
 	alphaSlider( ui->colorWireframe, ui->wireframe, ui->layAlphaWire );
 	alphaSlider( ui->colorHighlight, ui->highlight, ui->layAlphaHigh );
+	alphaSlider( ui->colorGrid, ui->gridColor, ui->layAlphaGrid, 0.8f );
 
 	connect( ui->btnClearCubeCache, &QPushButton::clicked, this, &SettingsRender::clearCubeCache );
 	connect( ui->btnLoadF76CubeMap, &QPushButton::clicked, this, &SettingsRender::selectF76CubeMap );
@@ -492,6 +496,24 @@ void SettingsRender::selectSTFCubeMap()
 {
 	if ( GLView::selectPBRCubeMapForGame( 172 ) )
 		modifyPane();
+}
+
+void SettingsRender::detectMSAAMaxSamples()
+{
+	GLint	maxSamples = -1;
+	GLint	maxSamplesI = -1;
+	glGetIntegerv( GL_MAX_SAMPLES, &maxSamples );
+	glGetIntegerv( GL_MAX_INTEGER_SAMPLES, &maxSamplesI );
+	if ( maxSamples <= 0 || ( maxSamplesI > 0 && maxSamplesI < maxSamples ) )
+		maxSamples = maxSamplesI;
+	if ( maxSamples <= 0 )
+		return;
+
+	int	n = std::min< int >( std::bit_width( (unsigned int) maxSamples ) - 1, 4 );
+	if ( n != ui->msaaSamples->currentIndex() ) {
+		ui->msaaSamples->setCurrentIndex( n );
+		modifyPane();
+	}
 }
 
 /*

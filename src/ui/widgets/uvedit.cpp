@@ -34,6 +34,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "message.h"
 #include "nifskope.h"
+#include "gl/glcontext.hpp"
 #include "gl/gltex.h"
 #include "gl/gltools.h"
 #include "model/nifmodel.h"
@@ -112,8 +113,19 @@ QStringList UVWidget::texnames = {
 UVWidget::UVWidget( QWidget * parent )
 	: QOpenGLWidget( parent, Qt::Window ), undoStack( new QUndoStack( this ) )
 {
+	cx = nullptr;
 	{
 		QSurfaceFormat	fmt = format();
+		// OpenGL version (4.1 or 4.2, core profile)
+		fmt.setRenderableType( QSurfaceFormat::OpenGL );
+		fmt.setMajorVersion( 4 );
+#ifdef Q_OS_MACOS
+		fmt.setMinorVersion( 1 );
+#else
+		fmt.setMinorVersion( 2 );
+#endif
+		fmt.setProfile( QSurfaceFormat::CoreProfile );
+		fmt.setOption( QSurfaceFormat::DeprecatedFunctions, false );
 		fmt.setColorSpace( QColorSpace::SRgb );
 		fmt.setSamples( 4 );
 		setFormat( fmt );
@@ -196,6 +208,7 @@ UVWidget::~UVWidget()
 {
 	delete textures;
 	nif = nullptr;
+	delete cx;
 }
 
 void UVWidget::updateSettings()
@@ -214,7 +227,8 @@ void UVWidget::initializeGL()
 {
 	glMatrixMode( GL_MODELVIEW );
 
-	initializeTextureUnits( context() );
+	cx = new NifSkopeOpenGLContext( context() );
+	textures->setOpenGLContext( cx );
 
 	glShadeModel( GL_SMOOTH );
 	//glShadeModel( GL_LINE_SMOOTH );
@@ -346,7 +360,7 @@ void UVWidget::paintGL()
 
 	glEnable( GL_BLEND );
 
-	glLineWidth( GLView::Settings::lineWidthGrid1 * 0.8f );
+	glLineWidth( GLView::Settings::lineWidthGrid * ( 4.0f / 7.0f ) );
 	glBegin( GL_LINES );
 	int glGridMinX = qRound( qMin( glViewRect[0], glViewRect[1] ) / glGridD );
 	int glGridMaxX = qRound( qMax( glViewRect[0], glViewRect[1] ) / glGridD );
@@ -357,17 +371,17 @@ void UVWidget::paintGL()
 		GLdouble glGridPos = glGridD * i;
 
 		if ( ( i % ( GRIDSEGS * GRIDSEGS ) ) == 0 ) {
-			glLineWidth( GLView::Settings::lineWidthGrid1 * 1.4f );
+			glLineWidth( GLView::Settings::lineWidthGrid );
 			glColor4f( 1.0f, 1.0f, 1.0f, 0.4f );
 		} else if ( zoom > ( GRIDSEGS * GRIDSEGS / 2.0 ) ) {
 			continue;
 		} else if ( ( i % GRIDSEGS ) == 0 ) {
-			glLineWidth( GLView::Settings::lineWidthGrid1 * 1.2f );
+			glLineWidth( GLView::Settings::lineWidthGrid * ( 6.0f / 7.0f ) );
 			glColor4f( 1.0f, 1.0f, 1.0f, 0.2f );
 		} else if ( zoom > ( GRIDSEGS / 2.0 ) ) {
 			continue;
 		} else {
-			glLineWidth( GLView::Settings::lineWidthGrid1 * 0.8f );
+			glLineWidth( GLView::Settings::lineWidthGrid * ( 4.0f / 7.0f ) );
 			glColor4f( 1.0f, 1.0f, 1.0f, 0.1f );
 		}
 
@@ -379,17 +393,17 @@ void UVWidget::paintGL()
 		GLdouble glGridPos = glGridD * i;
 
 		if ( ( i % ( GRIDSEGS * GRIDSEGS ) ) == 0 ) {
-			glLineWidth( GLView::Settings::lineWidthGrid1 * 1.4f );
+			glLineWidth( GLView::Settings::lineWidthGrid );
 			glColor4f( 1.0f, 1.0f, 1.0f, 0.4f );
 		} else if ( zoom > ( GRIDSEGS * GRIDSEGS / 2.0 ) ) {
 			continue;
 		} else if ( ( i % GRIDSEGS ) == 0 ) {
-			glLineWidth( GLView::Settings::lineWidthGrid1 * 1.2f );
+			glLineWidth( GLView::Settings::lineWidthGrid * ( 6.0f / 7.0f ) );
 			glColor4f( 1.0f, 1.0f, 1.0f, 0.2f );
 		} else if ( zoom > ( GRIDSEGS / 2.0 ) ) {
 			continue;
 		} else {
-			glLineWidth( GLView::Settings::lineWidthGrid1 * 0.8f );
+			glLineWidth( GLView::Settings::lineWidthGrid * ( 4.0f / 7.0f ) );
 			glColor4f( 1.0f, 1.0f, 1.0f, 0.1f );
 		}
 
@@ -1094,7 +1108,7 @@ bool UVWidget::setNifData( NifModel * nifModel, const QModelIndex & nifIndex )
 			return false;
 
 		int	sfMeshLOD = 0;
-		for ( auto w = dynamic_cast< NifSkope * >( nif->getWindow() ); w; w = nullptr ) {
+		if ( auto w = dynamic_cast< NifSkope * >( nif->getWindow() ); w ) {
 			auto	ogl = w->getGLView();
 			if ( ogl && ogl->getScene() )
 				sfMeshLOD = ogl->getScene()->lodLevel;
@@ -1118,12 +1132,11 @@ bool UVWidget::setNifData( NifModel * nifModel, const QModelIndex & nifIndex )
 		if ( !sfMeshIndex.isValid() )
 			return false;
 		MeshFile	meshFile( nif, sfMeshIndex );
-		if ( !( meshFile.isValid() && meshFile.coords.size() > 0 && meshFile.triangles.size() > 0 ) )
+		if ( !( meshFile.isValid() && meshFile.coords1.size() > 0 && meshFile.triangles.size() > 0 ) )
 			return false;
 
 		if ( ( nif->get<quint32>(iShape, "Flags") & 0x0200 ) == 0 ) {
-			for ( qsizetype i = 0; i < meshFile.coords.size(); i++ )
-				texcoords << Vector2( meshFile.coords[i][0], meshFile.coords[i][1] );
+			texcoords = meshFile.coords1;
 			if ( !setTexCoords( &(meshFile.triangles) ) )
 				return false;
 
@@ -1139,7 +1152,7 @@ bool UVWidget::setNifData( NifModel * nifModel, const QModelIndex & nifIndex )
 			if ( !setTexCoords() )
 				return false;
 
-			if ( meshFile.haveTexCoord2 && !coordSetSelect ) {
+			if ( meshFile.coords2.size() >= meshFile.coords1.size() && !coordSetSelect ) {
 				coordSetSelect = new QMenu( tr( "Select Coordinate Set" ) );
 				addAction( coordSetSelect->menuAction() );
 				connect( coordSetSelect, &QMenu::aboutToShow, this, &UVWidget::getCoordSets );

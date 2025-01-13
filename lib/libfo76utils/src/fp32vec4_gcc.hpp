@@ -455,13 +455,11 @@ inline FloatVector4& FloatVector4::exp2V()
 
 inline FloatVector4& FloatVector4::normalize(bool invFlag)
 {
-  static const float  invMultTable[2] = { -0.5f, 0.5f };
+  const float minVal = std::bit_cast< float >(std::uint32_t(0x00800000));
   float   tmp = dotProduct(*this);
-  float   tmp2;
-  __asm__ ("vmaxss %2, %1, %0"
-           : "=x" (tmp2) : "x" (tmp), "xm" (floatMinValV[0]));
-  __asm__ ("vrsqrtss %0, %0, %0" : "+x" (tmp2));
-  v *= ((tmp * tmp2 * tmp2 - 3.0f) * (tmp2 * invMultTable[int(invFlag)]));
+  __asm__ ("vmaxss %1, %0, %0" : "+x" (tmp) : "xm" (minVal));
+  __asm__ ("vsqrtss %0, %0, %0" : "+x" (tmp));
+  v /= (!invFlag ? tmp : -tmp);
   return (*this);
 }
 

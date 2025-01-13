@@ -854,7 +854,7 @@ public:
 	//! Default constructor
 	Quat()
 	{
-		memcpy( wxyz, identity, 16 );
+		std::memcpy( wxyz, identity, sizeof(Quat) );
 	}
 	//! Constructor
 	Quat( float w, float x, float y, float z )
@@ -977,14 +977,14 @@ inline QDataStream & operator>>( QDataStream & ds, Quat & q )
 	return ds;
 }
 
-//! A 3 by 3 matrix
+//! A 3 by 3 matrix in row-major order
 class Matrix
 {
 public:
 	//! Constructor
-	Matrix()
+	inline Matrix( const float * m2 = identity )
 	{
-		memcpy( m, identity, 36 );
+		std::memcpy( m, m2, sizeof(Matrix) );
 	}
 	//! Times operator for a matrix
 	Matrix operator*( const Matrix & m2 ) const
@@ -1078,39 +1078,30 @@ protected:
 	friend class NifOStream;
 };
 
-//! A 4 by 4 matrix
+class Transform;
+
+//! A 4 by 4 matrix in column-major order
 class Matrix4
 {
 public:
 	//! Constructor
-	Matrix4()
+	inline Matrix4( const float * m2 = identity )
 	{
-		memcpy( m, identity, 64 );
+		std::memcpy( m, m2, sizeof(Matrix4) );
 	}
 	//! Times operator for a matrix
-	Matrix4 operator*( const Matrix4 & m2 ) const
-	{
-		Matrix4 m3;
-
-		for ( int r = 0; r < 4; r++ ) {
-			for ( int c = 0; c < 4; c++ ) {
-				m3.m[r][c] = m[r][0] * m2.m[0][c]
-				           + m[r][1] * m2.m[1][c]
-				           + m[r][2] * m2.m[2][c]
-				           + m[r][3] * m2.m[3][c];
-			}
-		}
-
-		return m3;
-	}
+	Matrix4 operator*( const Matrix4 & m2 ) const;
+	//! Times operator for a transform
+	Matrix4 operator*( const Transform & t ) const;
 	//! Times operator for a vector
-	Vector3 operator*( const Vector3 & v ) const
+	inline FloatVector4 operator*( FloatVector4 v ) const
 	{
-		return Vector3(
-			m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2] + m[0][3],
-			m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2] + m[1][3],
-			m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2] + m[2][3]
-		);
+		return ( FloatVector4( &(m[0][0]) ) * v[0] ) + ( FloatVector4( &(m[1][0]) ) * v[1] )
+				+ ( FloatVector4( &(m[2][0]) ) * v[2] ) + ( FloatVector4( &(m[3][0]) ) * v[3] );
+	}
+	inline Vector3 operator*( const Vector3 & v ) const
+	{
+		return Vector3( *this * FloatVector4( v ).blendValues( FloatVector4( 1.0f ), 0x08 ) );
 	}
 	//! %Element operator
 	float & operator()( unsigned int c, unsigned int d )
@@ -1156,6 +1147,9 @@ public:
 	//! %Data accessor
 	const float * data() const { return (float *)m; }
 
+	static Matrix4 fromFrustum( double left, double right, double bottom, double top, double nearVal, double farVal );
+	static Matrix4 fromOrtho( double left, double right, double bottom, double top, double nearVal, double farVal );
+
 protected:
 	float m[4][4];
 	static const float identity[16];
@@ -1175,7 +1169,14 @@ public:
 	 */
 	Transform( const NifModel * nif, const QModelIndex & transform );
 	//! Default constructor
-	Transform() { scale = 1.0; }
+	Transform() { scale = 1.0f; }
+	//! Construct from translation and scale
+	Transform( const Vector3 & t, float s ) : translation( t ), scale( s ) {}
+	//! Construct from translation and non-uniform scale
+	Transform( const Vector3 & t, const Vector3 & s ) : translation( t ), scale( 1.0f )
+	{
+		rotation( 0, 0 ) = s[0]; rotation( 1, 1 ) = s[1]; rotation( 2, 2 ) = s[2];
+	}
 
 	//! Tests if a transform can be constructed
 	static bool canConstruct( const NifModel * nif, const QModelIndex & parent );
@@ -1675,7 +1676,7 @@ public:
 	FixedMatrix( int length1, int length2 )
 	{
 		int length = length1 * length2;
-		v_ = (T *)malloc( sizeof(T) * length );
+		v_ = (T *)std::malloc( sizeof(T) * length );
 		len0 = length1;
 		len1 = length2;
 	}
@@ -1686,14 +1687,14 @@ public:
 		int datalen = other.count();
 		len0 = other.count( 0 );
 		len1 = other.count( 1 );
-		v_ = (T *)malloc( sizeof(T) * datalen );
-		memcpy( array(), other.array(), datalen );
+		v_ = (T *)std::malloc( sizeof(T) * datalen );
+		std::memcpy( array(), other.array(), datalen );
 	}
 
 	//! Default Destructor
 	~FixedMatrix()
 	{
-		free( v_ );
+		std::free( v_ );
 	}
 
 	//! Copy Assignment
@@ -2077,6 +2078,8 @@ Q_DECLARE_TYPEINFO( Triangle,    Q_MOVABLE_TYPE );
 Q_DECLARE_TYPEINFO( Quat,        Q_MOVABLE_TYPE );
 Q_DECLARE_TYPEINFO( Matrix,      Q_MOVABLE_TYPE );
 Q_DECLARE_TYPEINFO( Transform,   Q_MOVABLE_TYPE );
+Q_DECLARE_TYPEINFO( Matrix4,     Q_MOVABLE_TYPE );
+Q_DECLARE_TYPEINFO( FloatVector4, Q_MOVABLE_TYPE );
 
 
 namespace NiMesh {

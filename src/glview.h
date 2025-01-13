@@ -213,7 +213,7 @@ protected slots:
 
 private:
 	NifModel * model;
-	Scene * scene;
+	Scene * scene = nullptr;
 
 	ViewState view;
 	DebugMode debugMode;
@@ -230,8 +230,6 @@ private:
 	Vector3 Rot;
 	GLdouble Zoom;
 	GLdouble axis;
-	GLdouble grid;
-	Transform viewTrans;
 
 	GLdouble aspect;
 
@@ -304,8 +302,7 @@ public:
 		static float	lineWidthAxes;
 		static float	lineWidthWireframe;
 		static float	lineWidthHighlight;
-		static float	lineWidthGrid1;
-		static float	lineWidthGrid2;
+		static float	lineWidthGrid;
 		static float	lineWidthSelect;
 		static float	zoomInScale;
 		static float	zoomOutScale;

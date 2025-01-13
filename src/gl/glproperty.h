@@ -37,6 +37,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "data/niftypes.h"
 #include "material.hpp"
 #include "model/nifmodel.h"
+#include "gl/glcontext.hpp"
 
 #include <QHash>
 #include <QPersistentModelIndex>
@@ -178,9 +179,7 @@ public:
 
 	GLfloat alphaThreshold = 0;
 
-	friend void glProperty( AlphaProperty * );
-	// returns test function (-1: disabled, 0: always, 1: <, 2: ==, 3: <=, 4: >, 5: !=, 6: >=, 7: never)
-	static int glProperty( float & alphaTestThreshold, const AlphaProperty * p );
+	static void glProperty( AlphaProperty * p, NifSkopeOpenGLContext::Program * prog );
 
 protected:
 	void setController( const NifModel * nif, const QModelIndex & controller ) override final;
@@ -205,7 +204,7 @@ public:
 	bool test() const { return depthTest; }
 	bool mask() const { return depthMask; }
 
-	friend void glProperty( ZBufferProperty * );
+	static void glProperty( ZBufferProperty * p );
 
 protected:
 	bool depthTest = false;
@@ -251,12 +250,11 @@ public:
 	Type type() const override final { return Texturing; }
 	QString typeId() const override final { return "NiTexturingProperty"; }
 
-	friend void glProperty( TexturingProperty * );
-
+	// ob_default.prog
 	bool bind( int id, const QString & fname = QString() );
 
-	bool bind( int id, const QVector<QVector<Vector2> > & texcoords );
-	bool bind( int id, const QVector<QVector<Vector2> > & texcoords, int stage );
+	// default.prog
+	bool bind( int id, int stage, NifSkopeOpenGLContext::Program * prog );
 
 	QString fileName( int id ) const;
 	int coordSet( int id ) const;
@@ -290,10 +288,7 @@ public:
 	Type type() const override final { return Texture; }
 	QString typeId() const override final { return "NiTextureProperty"; }
 
-	friend void glProperty( TextureProperty * );
-
-	bool bind();
-	bool bind( const QVector<QVector<Vector2> > & texcoords );
+	bool bind( NifSkopeOpenGLContext::Program * prog );
 
 	QString fileName() const;
 
@@ -318,7 +313,7 @@ public:
 	Type type() const override final { return MaterialProp; }
 	QString typeId() const override final { return "NiMaterialProperty"; }
 
-	friend void glProperty( class MaterialProperty *, class SpecularProperty * );
+	static void glProperty( MaterialProperty * p, class SpecularProperty * s, NifSkopeOpenGLContext::Program * prog );
 
 	GLfloat alphaValue() const { return alpha; }
 
@@ -335,13 +330,13 @@ REGISTER_PROPERTY( MaterialProperty, MaterialProp )
 //! A Property that specifies specularity
 class SpecularProperty final : public Property
 {
+	friend class MaterialProperty;
+
 public:
 	SpecularProperty( Scene * scene, const QModelIndex & index ) : Property( scene, index ) {}
 
 	Type type() const override final { return Specular; }
 	QString typeId() const override final { return "NiSpecularProperty"; }
-
-	friend void glProperty( class MaterialProperty *, class SpecularProperty * );
 
 protected:
 	bool spec = false;
@@ -360,7 +355,7 @@ public:
 	Type type() const override final { return Wireframe; }
 	QString typeId() const override final { return "NiWireframeProperty"; }
 
-	friend void glProperty( WireframeProperty * );
+	static bool glProperty( WireframeProperty * p );
 
 protected:
 	bool wire = false;
@@ -379,12 +374,16 @@ public:
 	Type type() const override final { return VertexColor; }
 	QString typeId() const override final { return "NiVertexColorProperty"; }
 
-	friend void glProperty( VertexColorProperty *, bool vertexcolors );
-
-	int lightmode = 0;
-	int vertexmode = 0;
+	// elements of overrideColor greater than zero override vertex color from the mesh data
+	static void glProperty( VertexColorProperty * p, FloatVector4 overrideColor,
+							NifSkopeOpenGLContext::Program * prog );
 
 protected:
+	// bits 0 to 2 = color mode
+	// bit 3 = light mode
+	// bits 4 to 5 = vertex mode
+	int vertexColorFlags = 0;
+
 	void updateImpl( const NifModel * nif, const QModelIndex & index ) override final;
 };
 
@@ -435,7 +434,7 @@ public:
 	Type type() const override final { return Stencil; }
 	QString typeId() const override final { return "NiStencilProperty"; }
 
-	friend void glProperty( StencilProperty * );
+	static void glProperty( StencilProperty * p );
 
 protected:
 	enum
@@ -695,11 +694,8 @@ public:
 	Type type() const override final { return ShaderLighting; }
 	QString typeId() const override { return "BSShaderLightingProperty"; }
 
-	friend void glProperty( BSShaderLightingProperty * );
-
 	void clear() override;
 
-	bool bind( int id, const QVector<QVector<Vector2> > & texcoords );
 	bool bind( const QStringView & fname, bool forceTexturing, TexClampMode mode = TexClampMode::WRAP_S_WRAP_T );
 	inline bool bind( int id, TexClampMode mode = TexClampMode::WRAP_S_WRAP_T )
 	{

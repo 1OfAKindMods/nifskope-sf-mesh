@@ -1,4 +1,4 @@
-#version 120
+#version 410 core
 
 uniform sampler2D BaseMap;
 uniform sampler2D NormalMap;
@@ -39,14 +39,16 @@ uniform float lightingEffect2;
 
 uniform mat3 viewMatrix;
 
-varying vec3 v;
+in vec3 LightDir;
+in vec3 ViewDir;
 
-varying vec3 LightDir;
-varying vec3 ViewDir;
+in vec2 texCoord;
 
-varying vec4 A;
-varying vec4 C;
-varying vec4 D;
+in vec4 A;
+in vec4 C;
+in vec4 D;
+
+out vec4 fragColor;
 
 
 vec3 tonemap(vec3 x, float y)
@@ -84,11 +86,11 @@ vec3 overlay( vec3 ba, vec3 bl )
 	return vec3( overlay(ba.r, bl.r), overlay(ba.g, bl.g), overlay( ba.b, bl.b ) );
 }
 
-void main( void )
+void main()
 {
-	vec2 offset = gl_TexCoord[0].st * uvScale + uvOffset;
+	vec2 offset = texCoord.st * uvScale + uvOffset;
 
-	vec4 baseMap = texture2D( BaseMap, offset );
+	vec4 baseMap = texture( BaseMap, offset );
 
 	vec4 color = baseMap;
 	color.a = C.a * baseMap.a * alpha;
@@ -101,7 +103,7 @@ void main( void )
 			discard;
 	}
 
-	vec4 normalMap = texture2D( NormalMap, offset );
+	vec4 normalMap = texture( NormalMap, offset );
 
 	vec3 normal = normalMap.rgb * 2.0 - 1.0;
 
@@ -138,7 +140,7 @@ void main( void )
 
 	// Specular
 
-	float s = texture2D( SpecularMap, offset ).r;
+	float s = texture( SpecularMap, offset ).r;
 	if ( !hasSpecularMap || hasBacklight ) {
 		s = normalMap.a;
 	}
@@ -149,7 +151,7 @@ void main( void )
 
 	vec3 backlight = vec3(0.0);
 	if ( hasBacklight ) {
-		backlight = texture2D( BacklightMap, offset ).rgb;
+		backlight = texture( BacklightMap, offset ).rgb;
 		backlight *= NdotNegL;
 
 		emissive += backlight * D.rgb;
@@ -157,7 +159,7 @@ void main( void )
 
 	vec4 mask = vec4(0.0);
 	if ( hasRimlight || hasSoftlight ) {
-		mask = texture2D( LightMask, offset );
+		mask = texture( LightMask, offset );
 	}
 
 	vec3 rim = vec3(0.0);
@@ -180,14 +182,14 @@ void main( void )
 
 	vec3 detail = vec3(0.0);
 	if ( hasDetailMask ) {
-		detail = texture2D( DetailMask, offset ).rgb;
+		detail = texture( DetailMask, offset ).rgb;
 
 		albedo = overlay( albedo, detail );
 	}
 
 	vec3 tint = vec3(0.0);
 	if ( hasTintMask ) {
-		tint = texture2D( TintMask, offset ).rgb;
+		tint = texture( TintMask, offset ).rgb;
 
 		albedo = overlay( albedo, tint );
 	}
@@ -203,5 +205,5 @@ void main( void )
 	color.rgb = albedo * (diffuse + emissive) + spec;
 	color.rgb = tonemap( color.rgb * D.a, A.a );
 
-	gl_FragColor = color;
+	fragColor = color;
 }

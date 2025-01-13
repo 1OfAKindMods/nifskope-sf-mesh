@@ -1,7 +1,9 @@
-#version 400 compatibility
+#version 410 core
 
 out vec3 LightDir;
 out vec3 ViewDir;
+
+out vec4 texCoord;
 
 out mat3 btnMatrix;
 
@@ -12,8 +14,22 @@ out vec4 D;
 out mat3 reflMatrix;
 
 uniform mat3 viewMatrix;
+uniform mat3 normalMatrix;
 uniform mat4 modelViewMatrix;
 uniform mat4 projectionMatrix;
+uniform vec4 lightSourcePosition[3];	// W0 = environment map rotation (-1.0 to 1.0), W1, W2 = viewport X, Y
+uniform vec4 lightSourceDiffuse[3];		// A0 = overall brightness, A1, A2 = viewport width, height
+uniform vec4 lightSourceAmbient;		// A = tone mapping control (1.0 = full tone mapping)
+
+uniform vec4 vertexColorOverride;	// components greater than zero replace the vertex color
+
+layout ( location = 0 ) in vec3 vertexPosition;
+layout ( location = 1 ) in vec4 vertexColor;
+layout ( location = 2 ) in vec3 normalVector;
+layout ( location = 3 ) in vec3 tangentVector;
+layout ( location = 4 ) in vec3 bitangentVector;
+layout ( location = 7 ) in vec2 multiTexCoord0;
+layout ( location = 8 ) in vec2 multiTexCoord1;
 
 mat3 rotateEnv( mat3 m, float rz )
 {
@@ -24,24 +40,25 @@ mat3 rotateEnv( mat3 m, float rz )
 				vec3(m[2][0] * rz_c - m[2][1] * rz_s, m[2][0] * rz_s + m[2][1] * rz_c, m[2][2]));
 }
 
-void main( void )
+void main()
 {
-	gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;
-	gl_TexCoord[0] = gl_MultiTexCoord0;
+	vec4 v = modelViewMatrix * vec4( vertexPosition, 1.0 );
+	gl_Position = projectionMatrix * v;
+	texCoord = vec4( multiTexCoord0, multiTexCoord1 );
 
-	btnMatrix[2] = normalize( gl_NormalMatrix * gl_Normal );
-	btnMatrix[1] = normalize( gl_NormalMatrix * gl_MultiTexCoord1.xyz );
-	btnMatrix[0] = normalize( gl_NormalMatrix * gl_MultiTexCoord2.xyz );
-	vec3 v = vec3( gl_ModelViewMatrix * gl_Vertex );
+	btnMatrix[2] = normalize( normalVector * normalMatrix );
+	btnMatrix[1] = normalize( tangentVector * normalMatrix );
+	btnMatrix[0] = normalize( bitangentVector * normalMatrix );
 
-	reflMatrix = rotateEnv( viewMatrix, gl_LightSource[0].position.w * 3.14159265 );
+	reflMatrix = rotateEnv( viewMatrix, lightSourcePosition[0].w * 3.14159265 );
 
-	if (gl_ProjectionMatrix[3][3] == 1.0)
-		v = vec3(0.0, 0.0, -1.0);	// orthographic view
-	ViewDir = -v.xyz;
-	LightDir = gl_LightSource[0].position.xyz;
+	if ( projectionMatrix[3][3] == 1.0 )
+		ViewDir = vec3(0.0, 0.0, 1.0);	// orthographic view
+	else
+		ViewDir = -v.xyz;
+	LightDir = lightSourcePosition[0].xyz;
 
-	A = gl_LightSource[0].ambient;
-	C = gl_Color;
-	D = gl_LightSource[0].diffuse;
+	A = lightSourceAmbient;
+	C = mix( vertexColor, vertexColorOverride, greaterThan( vertexColorOverride, vec4( 0.0 ) ) );
+	D = lightSourceDiffuse[0];
 }

@@ -1,17 +1,18 @@
-#version 120
-#extension GL_ARB_shader_texture_lod : require
+#version 410 core
 
 uniform samplerCube	CubeMap;
 uniform bool	hasCubeMap;
 uniform int	skyCubeMipLevel;
 
-varying vec3 LightDir;
-varying vec3 ViewDir;
+in vec3 LightDir;
+in vec3 ViewDir;
 
-varying vec4 A;
-varying vec4 D;
+in vec4 A;
+in vec4 D;
 
-varying mat3 reflMatrix;
+in mat3 reflMatrix;
+
+out vec4 fragColor;
 
 float LightingFuncGGX_REF( float LdotR, float roughness )
 {
@@ -56,10 +57,10 @@ void main()
 	// Environment
 	vec3	ambient = A.rgb;
 	if ( hasCubeMap ) {
-		color += textureCubeLod( CubeMap, viewWS, m ).rgb * ambient;
+		color += textureLod( CubeMap, viewWS, m ).rgb * ambient;
 	} else {
 		color += ambient * 0.08;
 	}
 
-	gl_FragColor = vec4( tonemap( color * D.a, A.a ), 0.0 );
+	fragColor = vec4( tonemap( color * D.a, A.a ), 0.0 );
 }

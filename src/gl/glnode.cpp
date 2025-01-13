@@ -41,6 +41,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "model/nifmodel.h"
 #include "ui/settingsdialog.h"
 #include "glview.h"
+#include "renderer.h"
 
 #include "lib/nvtristripwrapper.h"
 
@@ -50,11 +51,6 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <algorithm> // std::stable_sort
 
 //! @file glnode.cpp Scene management for visible NiNodes and their children.
-
-int Node::SELECTING = 0;
-
-static QColor highlightColor;
-static QColor wireframeColor;
 
 /*
  *  Node list
@@ -185,46 +181,25 @@ Node::Node( Scene * s, const QModelIndex & iBlock) : IControllable( s, iBlock ),
 {
 	nodeId = 0;
 	flags.bits = 0;
-
-	updateSettings();
-
-	connect( NifSkope::getOptions(), &SettingsDialog::saveSettings, this, &Node::updateSettings );
 }
 
-void Node::updateSettings()
+void Node::setGLColor( FloatVector4 c ) const
 {
-	QSettings settings;
-	settings.beginGroup( "Settings/Render/Colors/" );
-	// TODO: Remove the registry read for every new Node
-	cfg.highlight = settings.value( "Highlight", QColor( 255, 255, 0 ) ).value<QColor>();
-	cfg.wireframe = settings.value( "Wireframe", QColor( 0, 255, 0 ) ).value<QColor>();
-
-	highlightColor = cfg.highlight;
-	wireframeColor = cfg.wireframe;
-
-	settings.endGroup();
+	NifSkopeOpenGLContext::Program *	prog;
+	if ( scene->renderer && ( prog = scene->renderer->getCurrentProgram() ) != nullptr )
+		prog->uni4f( "vertexColorOverride", FloatVector4( 1.0e-15f ).maxValues( c ) );
 }
 
 // Old Options API
 //	TODO: Move away from the GL-like naming
-void glHighlightColor()
-{
-	glColor( Color4( highlightColor ) );
-}
-
-void glNormalColor()
-{
-	glColor( Color4( wireframeColor ) );
-}
-
 void Node::glHighlightColor() const
 {
-	glColor( Color4( cfg.highlight ) );
+	setGLColor( scene->highlightColor );
 }
 
 void Node::glNormalColor() const
 {
-	glColor( Color4( cfg.wireframe ) );
+	setGLColor( scene->wireframeColor );
 }
 
 
@@ -505,46 +480,38 @@ void Node::draw()
 	if ( !scene->isSelModeObject() )
 		return;
 
-	if ( Node::SELECTING ) {
-		setColorKeyFromID( nodeId );
-		glLineWidth( GLView::Settings::lineWidthSelect );	// make hitting a line a litlle bit more easy
+	FloatVector4	color = scene->wireframeColor;
+	float	lineWidth = GLView::Settings::lineWidthHighlight;
+	float	pointSize = GLView::Settings::vertexSelectPointSize;
+	if ( scene->selecting ) {
+		color = getColorKeyFromID( nodeId );
+		lineWidth = GLView::Settings::lineWidthSelect;	// make hitting a line a little bit more easy
 	} else {
 		glEnable( GL_DEPTH_TEST );
 		glDepthFunc( GL_LEQUAL );
 		glDepthMask( GL_TRUE );
-		glDisable( GL_TEXTURE_2D );
-		glDisable( GL_NORMALIZE );
-		glDisable( GL_LIGHTING );
-		glDisable( GL_COLOR_MATERIAL );
-		glEnable( GL_BLEND );
-		glDisable( GL_ALPHA_TEST );
-		glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
-
-		glNormalColor();
-		glLineWidth( GLView::Settings::lineWidthHighlight );
 	}
+	scene->setGLColor( color );
+	scene->setGLLineWidth( lineWidth );
+	scene->setGLPointSize( pointSize );
 
-	glPointSize( GLView::Settings::vertexSelectPointSize );
+	scene->loadModelViewMatrix( scene->view );
 
-	Vector3 a = viewTrans().translation;
-	Vector3 b = a;
-
-	if ( parent )
-		b = parent->viewTrans().translation;
-
-	glBegin( GL_POINTS );
-	glVertex( a );
-	glEnd();
-
-	if ( Node::SELECTING ) {
-		glBegin( GL_LINES );
-		glVertex( a );
-		glVertex( b );
-		glEnd();
+	Vector3 a = worldTrans().translation;
+	if ( !parent ) {
+		scene->drawPoints( &a );
 	} else {
-		auto c = cfg.wireframe;
-		glColor4f( c.redF(), c.greenF(), c.blueF(), c.alphaF() / 3.0 );
-		drawDashLine( a, b, 144 );
+		Vector3 b = parent->worldTrans().translation;
+		if ( scene->selecting ) {
+			scene->drawLine( a, b );
+		} else {
+			scene->setGLColor( color * FloatVector4( 1.0f, 1.0f, 1.0f, 1.0f / 3.0f ) );
+			scene->drawDashLine( a, b, 144 );
+			scene->setGLColor( color );
+		}
+		scene->pushAndMultModelViewMatrix( Transform( a, 1.0f ) );
+		scene->drawPoints();
+		scene->popModelViewMatrix();
 	}
 
 	for ( Node * node : children.list() ) {
@@ -571,37 +538,26 @@ void Node::drawSelection() const
 
 	auto n = scene->currentIndex.data( NifSkopeDisplayRole ).toString();
 
-	if ( Node::SELECTING ) {
-		setColorKeyFromID( nodeId );
-		glLineWidth( GLView::Settings::lineWidthSelect );
+	FloatVector4 color = scene->highlightColor;
+	float lineWidth = GLView::Settings::lineWidthHighlight;
+	if ( scene->selecting ) {
+		color = getColorKeyFromID( nodeId );
+		lineWidth = GLView::Settings::lineWidthSelect;
 	} else {
 		glEnable( GL_DEPTH_TEST );
 		glDepthFunc( GL_ALWAYS );
 		glDepthMask( GL_TRUE );
-		glDisable( GL_TEXTURE_2D );
-		glDisable( GL_NORMALIZE );
-		glDisable( GL_LIGHTING );
-		glDisable( GL_COLOR_MATERIAL );
-		glEnable( GL_POINT_SMOOTH );
-		glEnable( GL_BLEND );
-		glDisable( GL_ALPHA_TEST );
-		glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
-
-		glHighlightColor();
-		glLineWidth( GLView::Settings::lineWidthHighlight );
 	}
+	scene->setGLColor( color );
+	scene->setGLLineWidth( lineWidth );
+	scene->setGLPointSize( GLView::Settings::vertexSelectPointSize );
 
-	glPointSize( GLView::Settings::vertexSelectPointSize );
-
-	glPushMatrix();
-	glMultMatrix( viewTrans() );
+	scene->loadModelViewMatrix( viewTrans() );
 
 	float sceneRadius = scene->bounds().radius;
 	float normalScale = (sceneRadius > 150.0) ? 1.0 : sceneRadius / 150.0;
 
 	if ( currentBlock == "BSConnectPoint::Parents" ) {
-		glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
-
 		auto cp = nif->getIndex( scene->currentBlock, "Connect Points" );
 		bool isChild = scene->currentIndex.parent().data( NifSkopeDisplayRole ).toString() == "Connect Points";
 
@@ -627,116 +583,110 @@ void Node::drawSelection() const
 			t.translation = trans;
 			t.scale = normalScale * 16;
 
-			if ( i == sel ) {
-				glHighlightColor();
-			} else {
-				glNormalColor();
-			}
+			scene->pushAndMultModelViewMatrix( t );
 
-			glPushMatrix();
-			glMultMatrix( t );
+			if ( i == sel ) {
+				scene->setGLColor( scene->highlightColor );
+			} else {
+				scene->setGLColor( scene->wireframeColor );
+			}
 
 			auto pos = Vector3( 0, 0, 0 );
 
-			drawDashLine( pos, Vector3( 0, 1, 0 ), 15 );
-			drawDashLine( pos, Vector3( 1, 0, 0 ), 15 );
-			drawDashLine( pos, Vector3( 0, 0, 1 ), 15 );
-			drawCircle( pos, Vector3( 0, 1, 0 ), 1, 64 );
+			scene->drawDashLine( pos, Vector3( 0, 1, 0 ), 15 );
+			scene->drawDashLine( pos, Vector3( 1, 0, 0 ), 15 );
+			scene->drawDashLine( pos, Vector3( 0, 0, 1 ), 15 );
+			scene->drawCircle( pos, Vector3( 0, 1, 0 ), 1.0f, 64 );
 
-			glPopMatrix();
+			scene->popModelViewMatrix();
 		}
-
 	}
 
 	if ( currentBlock.endsWith( "Node" ) && scene->hasOption(Scene::ShowNodes) && scene->hasOption(Scene::ShowAxes) ) {
-		glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
-
 		Transform t;
 		t.rotation = nif->get<Matrix>( scene->currentIndex, "Rotation" );
 
-		glPushMatrix();
-		glMultMatrix( t );
+		scene->pushAndMultModelViewMatrix( t );
 
 		auto pos = Vector3( 0, 0, 0 );
 
-		glColor( { 0, 1, 0 } );
-		drawDashLine( pos, Vector3( 0, 1, 0 ), 15 );
-		glColor( { 1, 0, 0 } );
-		drawDashLine( pos, Vector3( 1, 0, 0 ), 15 );
-		glColor( { 0, 0, 1 } );
-		drawDashLine( pos, Vector3( 0, 0, 1 ), 15 );
+		scene->setGLColor( 0.0f, 1.0f, 0.0f, 1.0f );
+		scene->drawDashLine( pos, Vector3( 0, 1, 0 ), 15 );
+		scene->setGLColor( 1.0f, 0.0f, 0.0f, 1.0f );
+		scene->drawDashLine( pos, Vector3( 1, 0, 0 ), 15 );
+		scene->setGLColor( 0.0f, 0.0f, 1.0f, 1.0f );
+		scene->drawDashLine( pos, Vector3( 0, 0, 1 ), 15 );
 
-		glPopMatrix();
+		scene->popModelViewMatrix();
 	}
-
-	glPopMatrix();
 
 	if ( extraData )
 		return;
 
-	Vector3 a = viewTrans().translation;
-	Vector3 b = a;
+	scene->loadModelViewMatrix( scene->view );
 
-	if ( parent )
-		b = parent->viewTrans().translation;
-
-	glBegin( GL_POINTS );
-	glVertex( a );
-	glEnd();
-
-	auto c = cfg.highlight;
-	glColor4f( c.redF(), c.greenF(), c.blueF(), c.alphaF() * 0.8 );
-	glBegin( GL_LINES );
-	glVertex( a );
-	glVertex( b );
-	glEnd();
+	Vector3 a = worldTrans().translation;
+	if ( !parent ) {
+		scene->drawPoints( &a );
+	} else {
+		Vector3 b = parent->worldTrans().translation;
+		if ( scene->selecting ) {
+			scene->setGLColor( color );
+			scene->drawLine( a, b );
+		} else {
+			scene->setGLColor( color * FloatVector4( 1.0f, 1.0f, 1.0f, 0.8f ) );
+			scene->drawLine( a, b );
+			scene->setGLColor( color );
+		}
+		scene->pushAndMultModelViewMatrix( Transform( a, 1.0f ) );
+		scene->drawPoints();
+		scene->popModelViewMatrix();
+	}
 
 	for ( Node * node : children.list() ) {
 		node->draw();
 	}
 }
 
-void DrawVertexSelection( QVector<Vector3> & verts, int i )
+void Node::drawVertexSelection( QVector<Vector3> & verts, int i )
 {
-	glPointSize( GLView::Settings::vertexPointSize );
 	glDepthFunc( GL_LEQUAL );
-	glNormalColor();
-	glBegin( GL_POINTS );
 
-	for ( int j = 0; j < verts.count(); j++ )
-		glVertex( verts.value( j ) );
+	scene->setGLColor( scene->wireframeColor );
+	scene->setGLPointSize( GLView::Settings::vertexPointSize );
+	scene->drawPoints( verts.constData(), size_t( verts.size() ) );
 
-	glEnd();
-
-	if ( i >= 0 ) {
+	if ( i >= 0 && i < verts.size() ) {
 		glDepthFunc( GL_ALWAYS );
-		glHighlightColor();
-		glBegin( GL_POINTS );
-		glVertex( verts.value( i ) );
-		glEnd();
+		scene->setGLColor( scene->highlightColor );
+		scene->setGLPointSize( GLView::Settings::vertexPointSizeSelected );
+		scene->drawPoints( verts.constData() + i );
 	}
 }
 
-void DrawTriangleSelection( QVector<Vector3> const & verts, Triangle const & tri )
+void Node::drawTriangleSelection( QVector<Vector3> const & verts, Triangle const & tri )
 {
-	glLineWidth( GLView::Settings::lineWidthWireframe );
 	glDepthFunc( GL_ALWAYS );
-	glHighlightColor();
-	glBegin( GL_LINE_STRIP );
-	glVertex( verts.value( tri.v1() ) );
-	glVertex( verts.value( tri.v2() ) );
-	glVertex( verts.value( tri.v3() ) );
-	glVertex( verts.value( tri.v1() ) );
-	glEnd();
+
+	scene->setGLColor( scene->highlightColor );
+	scene->setGLLineWidth( GLView::Settings::lineWidthWireframe );
+	qsizetype	v0 = tri[0];
+	qsizetype	v1 = tri[1];
+	qsizetype	v2 = tri[2];
+	if ( std::max( v0, std::max( v1, v2 ) ) < verts.size() ) {
+		Vector3	positions[4] = { verts.at( v0 ), verts.at( v1 ), verts.at( v2 ), verts.at( v0 ) };
+		scene->drawLineStrip( positions, 4 );
+	}
 }
 
-void DrawTriangleIndex( QVector<Vector3> const & verts, Triangle const & tri, int index )
+void Node::drawTriangleIndex( QVector<Vector3> const & verts, Triangle const & tri, int index )
 {
 	Vector3 c = ( verts.value( tri.v1() ) + verts.value( tri.v2() ) + verts.value( tri.v3() ) ) /  3.0;
-	renderText( c, QString( "%1" ).arg( index ) );
+	scene->renderText( c, QString( "%1" ).arg( index ) );
 }
 
-void drawHvkShape( const NifModel * nif, const QModelIndex & iShape, QStack<QModelIndex> & stack, const Scene * scene, const float origin_color3fv[3] )
+void Node::drawHvkShape( const NifModel * nif, const QModelIndex & iShape, QStack<QModelIndex> & stack,
+							Scene * scene, FloatVector4 origin_color4fv, const Matrix4 & parentTransform )
 {
 	QString name = (nif) ? nif->itemName( iShape ) : "";
 
@@ -752,125 +702,123 @@ void drawHvkShape( const NifModel * nif, const QModelIndex & iShape, QStack<QMod
 
 	//qDebug() << "draw shape" << nif->getBlockNumber( iShape ) << nif->itemName( iShape );
 
+	scene->loadModelViewMatrix( parentTransform );
+
 	if ( name.endsWith( "ListShape" ) ) {
 		QModelIndex iShapes = nif->getIndex( iShape, "Sub Shapes" );
 
 		if ( iShapes.isValid() ) {
 			for ( int r = 0; r < nif->rowCount( iShapes ); r++ ) {
-				if ( !Node::SELECTING ) {
+				if ( !scene->selecting ) {
 					if ( scene->currentBlock == nif->getBlockIndex( nif->getLink( nif->getIndex( iShapes, r ) ) ) ) {
 						// fix: add selected visual to havok meshes
-						glHighlightColor();
-						glLineWidth( GLView::Settings::lineWidthHighlight );
+						scene->setGLColor( scene->highlightColor );
+						scene->setGLLineWidth( GLView::Settings::lineWidthHighlight );
 					} else {
 						if ( scene->currentBlock != iShape ) {
 							// allow group highlighting
-							glLineWidth( GLView::Settings::lineWidthWireframe * 0.625f );
-							glColor3fv( origin_color3fv );
+							scene->setGLColor( origin_color4fv );
+							scene->setGLLineWidth( GLView::Settings::lineWidthWireframe * 0.625f );
 						}
 					}
 				}
 
-				drawHvkShape( nif, nif->getBlockIndex( nif->getLink( nif->getIndex( iShapes, r ) ) ), stack, scene, origin_color3fv );
+				drawHvkShape( nif, nif->getBlockIndex( nif->getLink( nif->getIndex( iShapes, r ) ) ), stack,
+								scene, origin_color4fv, parentTransform );
 			}
 		}
 	} else if ( name == "bhkTransformShape" || name == "bhkConvexTransformShape" ) {
-		glPushMatrix();
-		Matrix4 tm = nif->get<Matrix4>( iShape, "Transform" );
-		// TODO find a better way to apply tm
-		Transform t;
-		Vector3 s;
-		tm.decompose( t.translation, t.rotation, s );
-		t.scale = (s[0] + s[1] + s[2]) / 3.0; // assume uniform
-		glMultMatrix( t );
-		drawHvkShape( nif, nif->getBlockIndex( nif->getLink( iShape, "Shape" ) ), stack, scene, origin_color3fv );
-		glPopMatrix();
+		Matrix4 tm = parentTransform * nif->get<Matrix4>( iShape, "Transform" );
+		drawHvkShape( nif, nif->getBlockIndex( nif->getLink( iShape, "Shape" ) ), stack, scene, origin_color4fv, tm );
 	} else if ( name == "bhkSphereShape" ) {
-		if ( Node::SELECTING ) {
-			setColorKeyFromID( nif->getBlockNumber( iShape ) );
+		if ( scene->selecting ) {
+			scene->setGLColor( getColorKeyFromID( nif->getBlockNumber( iShape ) ) );
 		}
 
-		drawSphere( Vector3(), nif->get<float>( iShape, "Radius" ) );
+		scene->drawSphere( Vector3(), nif->get<float>( iShape, "Radius" ) );
 	} else if ( name == "bhkMultiSphereShape" ) {
-		if ( Node::SELECTING ) {
-			setColorKeyFromID( nif->getBlockNumber( iShape ) );
+		if ( scene->selecting ) {
+			scene->setGLColor( getColorKeyFromID( nif->getBlockNumber( iShape ) ) );
 		}
 
 		QModelIndex iSpheres = nif->getIndex( iShape, "Spheres" );
 
 		for ( int r = 0; r < nif->rowCount( iSpheres ); r++ ) {
-			drawSphere( nif->get<Vector3>( nif->getIndex( iSpheres, r ), "Center" ), nif->get<float>( nif->getIndex( iSpheres, r ), "Radius" ) );
+			scene->drawSphere( nif->get<Vector3>( nif->getIndex( iSpheres, r ), "Center" ),
+								nif->get<float>( nif->getIndex( iSpheres, r ), "Radius" ) );
 		}
 	} else if ( name == "bhkBoxShape" ) {
-		if ( Node::SELECTING ) {
-			setColorKeyFromID( nif->getBlockNumber( iShape ) );
+		if ( scene->selecting ) {
+			scene->setGLColor( getColorKeyFromID( nif->getBlockNumber( iShape ) ) );
 		}
 
 		Vector3 v = nif->get<Vector3>( iShape, "Dimensions" );
-		drawBox( v, -v );
+		scene->drawBox( v, -v );
 	} else if ( name == "bhkCapsuleShape" ) {
-		if ( Node::SELECTING ) {
-			setColorKeyFromID( nif->getBlockNumber( iShape ) );
+		if ( scene->selecting ) {
+			scene->setGLColor( getColorKeyFromID( nif->getBlockNumber( iShape ) ) );
 		}
 
-		drawCapsule( nif->get<Vector3>( iShape, "First Point" ), nif->get<Vector3>( iShape, "Second Point" ), nif->get<float>( iShape, "Radius" ) );
+		scene->drawCapsule( nif->get<Vector3>( iShape, "First Point" ),
+							nif->get<Vector3>( iShape, "Second Point" ), nif->get<float>( iShape, "Radius" ) );
 	} else if ( name == "bhkCylinderShape" ) {
-		if ( Node::SELECTING ) {
-			setColorKeyFromID( nif->getBlockNumber( iShape ) );
+		if ( scene->selecting ) {
+			scene->setGLColor( getColorKeyFromID( nif->getBlockNumber( iShape ) ) );
 		}
 
-		drawCylinder( Vector3( nif->get<Vector4>( iShape, "Vertex A" ) ), Vector3( nif->get<Vector4>( iShape, "Vertex B" ) ), nif->get<float>( iShape, "Cylinder Radius" ) );
+		scene->drawCylinder( Vector3( nif->get<Vector4>( iShape, "Vertex A" ) ),
+								Vector3( nif->get<Vector4>( iShape, "Vertex B" ) ),
+								nif->get<float>( iShape, "Cylinder Radius" ) );
 	} else if ( name == "bhkNiTriStripsShape" ) {
-		glPushMatrix();
-		float s = bhkInvScale( nif );
-		glScalef( s, s, s );
+		scene->pushAndMultModelViewMatrix( Transform( Vector3(), bhkInvScale( nif ) ) );
 
-		if ( Node::SELECTING ) {
-			setColorKeyFromID( nif->getBlockNumber( iShape ) );
+		if ( scene->selecting ) {
+			scene->setGLColor( getColorKeyFromID( nif->getBlockNumber( iShape ) ) );
 		}
 
-		drawNiTSS( nif, iShape );
+		scene->drawNiTSS( nif, iShape );
+#if 0
+		if ( Options::getHavokState() == HAVOK_SOLID ) {
+			QColor c = Options::hlColor();
+			c.setAlphaF( 0.3 );
+			scene->setGLColor( c );
 
-		//if ( Options::getHavokState() == HAVOK_SOLID ) {
-		//	QColor c = Options::hlColor();
-		//	c.setAlphaF( 0.3 );
-		//	glColor( Color4( c ) );
-		//
-		//	drawNiTSS( nif, iShape, true );
-		//}
-
-		glPopMatrix();
+			scene->drawNiTSS( nif, iShape, true );
+		}
+#endif
+		scene->popModelViewMatrix();
 	} else if ( name == "bhkConvexVerticesShape" ) {
-		if ( Node::SELECTING ) {
-			setColorKeyFromID( nif->getBlockNumber( iShape ) );
+		if ( scene->selecting ) {
+			scene->setGLColor( getColorKeyFromID( nif->getBlockNumber( iShape ) ) );
 		}
 
-		drawConvexHull( nif, iShape, 1.0 );
+		scene->drawConvexHull( nif, iShape, 1.0 );
+#if 0
+		if ( Options::getHavokState() == HAVOK_SOLID ) {
+			QColor c = Options::hlColor();
+			c.setAlphaF( 0.3 );
+			scene->setGLColor( c );
 
-		//if ( Options::getHavokState() == HAVOK_SOLID ) {
-		//	QColor c = Options::hlColor();
-		//	c.setAlphaF( 0.3 );
-		//	glColor( Color4( c ) );
-		//
-		//	drawConvexHull( nif, iShape, havokScale, true );
-		//}
-
+			scene->drawConvexHull( nif, iShape, havokScale, true );
+		}
+#endif
 	} else if ( name == "bhkMoppBvTreeShape" ) {
-		if ( !Node::SELECTING ) {
+		if ( !scene->selecting ) {
 			if ( scene->currentBlock == nif->getBlockIndex( nif->getLink( iShape, "Shape" ) ) ) {
 				// fix: add selected visual to havok meshes
-				glHighlightColor();
-				glLineWidth( GLView::Settings::lineWidthWireframe );	// taken from "DrawTriangleSelection"
+				scene->setGLColor( scene->highlightColor );
+				scene->setGLLineWidth( GLView::Settings::lineWidthWireframe );	// taken from "DrawTriangleSelection"
 			} else {
-				glLineWidth( GLView::Settings::lineWidthWireframe * 0.625f );
-				glColor3fv( origin_color3fv );
+				scene->setGLColor( origin_color4fv );
+				scene->setGLLineWidth( GLView::Settings::lineWidthWireframe * 0.625f );
 			}
 		}
 
-		drawHvkShape( nif, nif->getBlockIndex( nif->getLink( iShape, "Shape" ) ), stack, scene, origin_color3fv );
+		drawHvkShape( nif, nif->getBlockIndex( nif->getLink( iShape, "Shape" ) ), stack,
+						scene, origin_color4fv, parentTransform );
 	} else if ( name == "bhkPackedNiTriStripsShape" || name == "hkPackedNiTriStripsData" ) {
-		if ( Node::SELECTING ) {
-			setColorKeyFromID( nif->getBlockNumber( iShape ) );
+		if ( scene->selecting ) {
+			scene->setGLColor( getColorKeyFromID( nif->getBlockNumber( iShape ) ) );
 		}
 
 		QModelIndex iData = nif->getBlockIndex( nif->getLink( iShape, "Data" ) );
@@ -904,7 +852,7 @@ void drawHvkShape( const NifModel * nif, const QModelIndex & iShape, QStack<QMod
 				}
 
 				if ( n == "Vertices" || n == "Normals" || n == "Vertex Colors" || n == "UV Sets" ) {
-					DrawVertexSelection( verts, i );
+					drawVertexSelection( verts, i );
 				} else if ( ( n == "Faces" || n == "Triangles" ) ) {
 					if ( i == -1 ) {
 						glDepthFunc( GL_ALWAYS );
@@ -914,7 +862,7 @@ void drawHvkShape( const NifModel * nif, const QModelIndex & iShape, QStack<QMod
 						//	DrawTriangleIndex( verts, nif->get<Triangle>( nif->getIndex( iTris, t ), "Triangle" ), t );
 					} else if ( nif->isCompound( nif->itemStrType( scene->currentIndex ) ) ) {
 						Triangle tri = nif->get<Triangle>( nif->getIndex( iTris, i ), "Triangle" );
-						DrawTriangleSelection( verts, tri );
+						drawTriangleSelection( verts, tri );
 						//DrawTriangleIndex( verts, tri, i );
 					} else if ( nif->itemName( scene->currentIndex ) == "Normal" ) {
 						Triangle tri = nif->get<Triangle>( scene->currentIndex.parent(), "Triangle" );
@@ -948,7 +896,7 @@ void drawHvkShape( const NifModel * nif, const QModelIndex & iShape, QStack<QMod
 
 						if ( (start_vertex <= tri[0]) && (tri[0] < end_vertex) ) {
 							if ( (start_vertex <= tri[1]) && (tri[1] < end_vertex) && (start_vertex <= tri[2]) && (tri[2] < end_vertex) ) {
-								DrawTriangleSelection( verts, tri );
+								drawTriangleSelection( verts, tri );
 								//DrawTriangleIndex( verts, tri, t );
 							} else {
 								qDebug() << "triangle with multiple materials?" << t;
@@ -995,7 +943,7 @@ void drawHvkShape( const NifModel * nif, const QModelIndex & iShape, QStack<QMod
 
 						if ( (start_vertex <= tri[0]) && (tri[0] < end_vertex) ) {
 							if ( (start_vertex <= tri[1]) && (tri[1] < end_vertex) && (start_vertex <= tri[2]) && (tri[2] < end_vertex) ) {
-								DrawTriangleSelection( verts, tri );
+								drawTriangleSelection( verts, tri );
 								//DrawTriangleIndex( verts, tri, t );
 							} else {
 								qDebug() << "triangle with multiple materials?" << t;
@@ -1006,31 +954,31 @@ void drawHvkShape( const NifModel * nif, const QModelIndex & iShape, QStack<QMod
 			}
 		}
 	} else if ( name == "bhkCompressedMeshShape" ) {
-		if ( Node::SELECTING ) {
-			setColorKeyFromID( nif->getBlockNumber( iShape ) );
+		if ( scene->selecting ) {
+			scene->setGLColor( getColorKeyFromID( nif->getBlockNumber( iShape ) ) );
 		}
 
-		drawCMS( nif, iShape );
+		scene->drawCMS( nif, iShape );
+#if 0
+		if ( Options::getHavokState() == HAVOK_SOLID ) {
+			QColor c = Options::hlColor();
+			c.setAlphaF( 0.3 );
+			scene->setGLColor( c );
 
-		//if ( Options::getHavokState() == HAVOK_SOLID ) {
-		//	QColor c = Options::hlColor();
-		//	c.setAlphaF( 0.3 );
-		//	glColor( Color4( c ) );
-		//
-		//	drawCMS( nif, iShape, true );
-		//}
+			scene->drawCMS( nif, iShape, true );
+		}
+#endif
 	}
 
 	stack.pop();
 }
 
-void drawHvkConstraint( const NifModel * nif, const QModelIndex & iConstraint, const Scene * scene )
+void Node::drawHvkConstraint( const NifModel * nif, const QModelIndex & iConstraint, Scene * scene )
 {
-	if ( !( nif && iConstraint.isValid() && scene && scene->hasOption(Scene::ShowConstraints) ) )
+	if ( !( nif && iConstraint.isValid() && scene && scene->hasOption(Scene::ShowConstraints)
+			&& scene->isSelModeObject() ) ) {
 		return;
-
-	if ( !scene->isSelModeObject() )
-		return;
+	}
 
 	Transform tBodyA;
 	Transform tBodyB;
@@ -1054,25 +1002,27 @@ void drawHvkConstraint( const NifModel * nif, const QModelIndex & iConstraint, c
 	tBodyA.scale = tBodyA.scale * hkFactorInv;
 	tBodyB.scale = tBodyB.scale * hkFactorInv;
 
-	Color3 color_a( 0.8f, 0.6f, 0.0f );
-	Color3 color_b( 0.6f, 0.8f, 0.0f );
+	FloatVector4 color_a( 0.8f, 0.6f, 0.0f, 1.0f );
+	FloatVector4 color_b( 0.6f, 0.8f, 0.0f, 1.0f );
 
-	if ( Node::SELECTING ) {
-		setColorKeyFromID( nif->getBlockNumber( iConstraint ) );
-		glLineWidth( GLView::Settings::lineWidthSelect );	// make hitting a line a litlle bit more easy
+	float	lineWidth = GLView::Settings::lineWidthHighlight;
+	if ( scene->selecting ) {
+		color_a = getColorKeyFromID( nif->getBlockNumber( iConstraint ) );
+		color_b = color_a;
+		lineWidth = GLView::Settings::lineWidthSelect;	// make hitting a line a litlle bit more easy
 	} else {
 		if ( scene->currentBlock == nif->getBlockIndex( iConstraint ) ) {
 			// fix: add selected visual to havok meshes
-			glHighlightColor();
-			color_a.fromQColor( highlightColor );
-			color_b.setRGB( highlightColor.blueF(), highlightColor.redF(), highlightColor.greenF() );
+			color_a = scene->highlightColor;
+			color_b.blendValues( color_a, 0x07 );
 		}
 	}
+	scene->setGLLineWidth( lineWidth );
 
-	glPushMatrix();
-	glLoadMatrix( scene->view );
+	Matrix4 vt = scene->view.toMatrix4();
+	Matrix4 mBodyA = vt * tBodyA;
+	Matrix4 mBodyB = vt * tBodyB;
 
-	glPushAttrib( GL_ENABLE_BIT );
 	glEnable( GL_DEPTH_TEST );
 
 	QString name = nif->itemName( iConstraint );
@@ -1113,44 +1063,36 @@ void drawHvkConstraint( const NifModel * nif, const QModelIndex & iConstraint, c
 		const float minAngle = nif->get<float>( iConstraintInfo, "Min Angle" );
 		const float maxAngle = nif->get<float>( iConstraintInfo, "Max Angle" );
 
-		glPushMatrix();
-		glMultMatrix( tBodyA );
+		scene->loadModelViewMatrix( mBodyA );
 
-		if ( !Node::SELECTING )
-			glColor( color_a );
+		scene->setGLColor( color_a );
 
-		glBegin( GL_POINTS ); glVertex( pivotA ); glEnd();
-		glBegin( GL_LINES ); glVertex( pivotA ); glVertex( pivotA + axisA ); glEnd();
-		drawDashLine( pivotA, pivotA + axisA1, 14 );
-		drawDashLine( pivotA, pivotA + axisA2, 14 );
-		drawCircle( pivotA, axisA, 1.0 );
-		drawSolidArc( pivotA, axisA / 5, axisA2, axisA1, minAngle, maxAngle, 1.0f );
-		glPopMatrix();
+		scene->drawPoints( &pivotA );
+		scene->drawLine( pivotA, pivotA + axisA );
+		scene->drawDashLine( pivotA, pivotA + axisA1, 14 );
+		scene->drawDashLine( pivotA, pivotA + axisA2, 14 );
+		scene->drawCircle( pivotA, axisA, 1.0f );
+		scene->drawSolidArc( pivotA, axisA / 5, axisA2, axisA1, minAngle, maxAngle, 1.0f );
 
-		glPushMatrix();
-		glMultMatrix( tBodyB );
+		scene->loadModelViewMatrix( mBodyB );
 
-		if ( !Node::SELECTING )
-			glColor( color_b );
+		scene->setGLColor( color_b );
 
-		glBegin( GL_POINTS ); glVertex( pivotB ); glEnd();
-		glBegin( GL_LINES ); glVertex( pivotB ); glVertex( pivotB + axisB ); glEnd();
-		drawDashLine( pivotB + axisB2, pivotB, 14 );
-		drawDashLine( pivotB + Vector3::crossproduct( axisB2, axisB ), pivotB, 14 );
-		drawCircle( pivotB, axisB, 1.01f );
-		drawSolidArc( pivotB, axisB / 7, axisB2, Vector3::crossproduct( axisB2, axisB ), minAngle, maxAngle, 1.01f );
-		glPopMatrix();
+		scene->drawPoints( &pivotB );
+		scene->drawLine( pivotB, pivotB + axisB );
+		scene->drawDashLine( pivotB + axisB2, pivotB, 14 );
+		scene->drawDashLine( pivotB + Vector3::crossproduct( axisB2, axisB ), pivotB, 14 );
+		scene->drawCircle( pivotB, axisB, 1.01f );
+		scene->drawSolidArc( pivotB, axisB / 7, axisB2, Vector3::crossproduct( axisB2, axisB ),
+								minAngle, maxAngle, 1.01f );
 
-		glMultMatrix( tBodyA );
+		scene->loadModelViewMatrix( mBodyA );
+
 		float angle = Vector3::angle( tBodyA.rotation * axisA2, tBodyB.rotation * axisB2 );
 
-		if ( !Node::SELECTING )
-			glColor( color_a );
+		scene->setGLColor( color_a );
 
-		glBegin( GL_LINES );
-		glVertex( pivotA );
-		glVertex( pivotA + axisA1 * cosf( angle ) + axisA2 * sinf( angle ) );
-		glEnd();
+		scene->drawLine( pivotA, pivotA + axisA1 * cosf( angle ) + axisA2 * sinf( angle ) );
 	} else if ( name == "bhkHingeConstraint" ) {
 		const Vector3 axisA1( nif->get<Vector4>( iConstraintInfo, "Perp Axis In A1" ) );
 		const Vector3 axisA2( nif->get<Vector4>( iConstraintInfo, "Perp Axis In A2" ) );
@@ -1185,33 +1127,30 @@ void drawHvkConstraint( const NifModel * nif, const QModelIndex & iConstraint, c
 		const float minAngle = (float)-PI;
 		const float maxAngle = (float)+PI;
 
-		glPushMatrix();
-		glMultMatrix( tBodyA );
+		scene->loadModelViewMatrix( mBodyA );
 
-		if ( !Node::SELECTING )
-			glColor( color_a );
+		scene->setGLColor( color_a );
 
-		glBegin( GL_POINTS ); glVertex( pivotA ); glEnd();
-		drawDashLine( pivotA, pivotA + axisA1 );
-		drawDashLine( pivotA, pivotA + axisA2 );
-		drawSolidArc( pivotA, axisA / 5, axisA2, axisA1, minAngle, maxAngle, 1.0f, 16 );
-		glPopMatrix();
+		scene->drawPoints( &pivotA );
+		scene->drawDashLine( pivotA, pivotA + axisA1 );
+		scene->drawDashLine( pivotA, pivotA + axisA2 );
+		scene->drawSolidArc( pivotA, axisA / 5, axisA2, axisA1, minAngle, maxAngle, 1.0f, 16 );
 
-		glMultMatrix( tBodyB );
+		scene->loadModelViewMatrix( mBodyB );
 
-		if ( !Node::SELECTING )
-			glColor( color_b );
+		scene->setGLColor( color_b );
 
-		glBegin( GL_POINTS ); glVertex( pivotB ); glEnd();
-		glBegin( GL_LINES ); glVertex( pivotB ); glVertex( pivotB + axisB ); glEnd();
-		drawSolidArc( pivotB, axisB / 7, axisB2, axisB1, minAngle, maxAngle, 1.01f, 16 );
+		scene->drawPoints( &pivotB );
+		scene->drawLine( pivotB, pivotB + axisB );
+		scene->drawSolidArc( pivotB, axisB / 7, axisB2, axisB1, minAngle, maxAngle, 1.01f, 16 );
 	} else if ( name == "bhkStiffSpringConstraint" ) {
 		const float length = nif->get<float>( iConstraintInfo, "Length" );
 
-		if ( !Node::SELECTING )
-			glColor( color_b );
+		scene->loadModelViewMatrix( vt );
 
-		drawSpring( pivotA, pivotB, length );
+		scene->setGLColor( color_b );
+
+		scene->drawSpring( pivotA, pivotB, length );
 	} else if ( name == "bhkRagdollConstraint" ) {
 		const Vector3 planeA( nif->get<Vector4>( iConstraintInfo, "Plane A" ) );
 		const Vector3 planeB( nif->get<Vector4>( iConstraintInfo, "Plane B" ) );
@@ -1230,37 +1169,23 @@ void drawHvkConstraint( const NifModel * nif, const QModelIndex & iConstraint, c
 		const float maxTwistAngle( nif->get<float>( iConstraintInfo, "Twist Max Angle" ) );
 		*/
 
-		glPushMatrix();
-		glMultMatrix( tBodyA );
+		scene->loadModelViewMatrix( mBodyA );
 
-		if ( !Node::SELECTING )
-			glColor( color_a );
+		scene->setGLColor( color_a );
 
-		glPopMatrix();
+		scene->drawPoints( &pivotA );
+		scene->drawLine( pivotA, pivotA + twistA );
+		scene->drawDashLine( pivotA, pivotA + planeA, 14 );
+		scene->drawRagdollCone( pivotA, twistA, planeA, coneAngle, minPlaneAngle, maxPlaneAngle );
 
-		glPushMatrix();
-		glMultMatrix( tBodyA );
+		scene->loadModelViewMatrix( mBodyB );
 
-		if ( !Node::SELECTING )
-			glColor( color_a );
+		scene->setGLColor( color_b );
 
-		glBegin( GL_POINTS ); glVertex( pivotA ); glEnd();
-		glBegin( GL_LINES ); glVertex( pivotA ); glVertex( pivotA + twistA ); glEnd();
-		drawDashLine( pivotA, pivotA + planeA, 14 );
-		drawRagdollCone( pivotA, twistA, planeA, coneAngle, minPlaneAngle, maxPlaneAngle );
-		glPopMatrix();
-
-		glPushMatrix();
-		glMultMatrix( tBodyB );
-
-		if ( !Node::SELECTING )
-			glColor( color_b );
-
-		glBegin( GL_POINTS ); glVertex( pivotB ); glEnd();
-		glBegin( GL_LINES ); glVertex( pivotB ); glVertex( pivotB + twistB ); glEnd();
-		drawDashLine( pivotB + planeB, pivotB, 14 );
-		drawRagdollCone( pivotB, twistB, planeB, coneAngle, minPlaneAngle, maxPlaneAngle );
-		glPopMatrix();
+		scene->drawPoints( &pivotB );
+		scene->drawLine( pivotB, pivotB + twistB );
+		scene->drawDashLine( pivotB + planeB, pivotB, 14 );
+		scene->drawRagdollCone( pivotB, twistB, planeB, coneAngle, minPlaneAngle, maxPlaneAngle );
 	} else if ( name == "bhkPrismaticConstraint" ) {
 		const Vector3 planeNormal( nif->get<Vector4>( iConstraintInfo, "Plane A" ) );
 		const Vector3 slidingAxis( nif->get<Vector4>( iConstraintInfo, "Sliding A" ) );
@@ -1272,19 +1197,17 @@ void drawHvkConstraint( const NifModel * nif, const QModelIndex & iConstraint, c
 		const Vector3 d2 = pivotA + slidingAxis * maxDistance;
 
 		/* draw Pivot A and Plane */
-		glPushMatrix();
-		glMultMatrix( tBodyA );
+		scene->loadModelViewMatrix( mBodyA );
 
-		if ( !Node::SELECTING )
-			glColor( color_a );
+		scene->setGLColor( color_a );
 
-		glBegin( GL_POINTS ); glVertex( pivotA ); glEnd();
-		glBegin( GL_LINES ); glVertex( pivotA ); glVertex( pivotA + planeNormal ); glEnd();
-		drawDashLine( pivotA, d1, 14 );
+		scene->drawPoints( &pivotA );
+		scene->drawLine( pivotA, pivotA + planeNormal );
+		scene->drawDashLine( pivotA, d1, 14 );
 
 		/* draw rail */
 		if ( minDistance < maxDistance ) {
-			drawRail( d1, d2 );
+			scene->drawRail( d1, d2 );
 		}
 
 		/*draw first marker*/
@@ -1297,36 +1220,29 @@ void drawHvkConstraint( const NifModel * nif, const QModelIndex & iConstraint, c
 
 		t.translation = d1;
 		t.rotation.fromEuler( 0.0f, 0.0f, angle );
-		glMultMatrix( t );
+		scene->multModelViewMatrix( t );
 
 		angle = -asinf( slidingAxis[2] / slidingAxis.length() );
 		t.translation = Vector3( 0.0f, 0.0f, 0.0f );
 		t.rotation.fromEuler( 0.0f, angle, 0.0f );
-		glMultMatrix( t );
+		scene->multModelViewMatrix( t );
 
 		drawMarker( &BumperMarker01 );
 
 		/*draw second marker*/
 		t.translation = Vector3( minDistance < maxDistance ? ( d2 - d1 ).length() : 0.0f, 0.0f, 0.0f );
 		t.rotation.fromEuler( 0.0f, 0.0f, (float)PI );
-		glMultMatrix( t );
+		scene->multModelViewMatrix( t );
 
 		drawMarker( &BumperMarker01 );
-		glPopMatrix();
 
 		/* draw Pivot B */
-		glPushMatrix();
-		glMultMatrix( tBodyB );
+		scene->loadModelViewMatrix( mBodyB );
 
-		if ( !Node::SELECTING )
-			glColor( color_b );
+		scene->setGLColor( color_b );
 
-		glBegin( GL_POINTS ); glVertex( pivotB ); glEnd();
-		glPopMatrix();
+		scene->drawPoints( &pivotB );
 	}
-
-	glPopAttrib();
-	glPopMatrix();
 }
 
 void Node::drawHavok()
@@ -1344,6 +1260,8 @@ void Node::drawHavok()
 	if ( !nif )
 		return;
 
+	scene->loadModelViewMatrix( scene->view );
+
 	//Check if there's any old style collision bounding box set
 	if ( nif->get<bool>( iBlock, "Has Bounding Box" ) == true ) {
 		QModelIndex iBox = nif->getIndex( iBlock, "Bounding Box" );
@@ -1356,23 +1274,19 @@ void Node::drawHavok()
 
 		Vector3 rad = nif->get<Vector3>( iBox, "Radius" );
 
-		glPushMatrix();
-		glLoadMatrix( scene->view );
 		// The Morrowind construction set seems to completely ignore the node transform
 		//glMultMatrix( worldTrans() );
-		glMultMatrix( bt );
+		scene->pushAndMultModelViewMatrix( bt );
 
-		if ( Node::SELECTING ) {
-			setColorKeyFromID( nodeId );
-		} else {
-			glColor( Color3( 1.0f, 0.0f, 0.0f ) );
-			glDisable( GL_LIGHTING );
-		}
+		FloatVector4	color( 1.0f, 0.0f, 0.0f, 1.0f );
+		if ( scene->selecting )
+			color = getColorKeyFromID( nodeId );
 
-		glLineWidth( GLView::Settings::lineWidthWireframe * 0.625f );
-		drawBox( rad, -rad );
+		scene->setGLColor( color );
+		scene->setGLLineWidth( GLView::Settings::lineWidthWireframe * 0.625f );
+		scene->drawBox( rad, -rad );
 
-		glPopMatrix();
+		scene->popModelViewMatrix();
 	}
 
 	// Only Bethesda support after this
@@ -1388,9 +1302,7 @@ void Node::drawHavok()
 
 			Vector3 a, b;
 
-			glPushMatrix();
-			glLoadMatrix( scene->view );
-			glMultMatrix( worldTrans() );
+			scene->pushAndMultModelViewMatrix( worldTrans() );
 
 			// BSMultiBoundAABB
 			if ( nif->isNiBlock( iBSMultiBoundData, "BSMultiBoundAABB" ) ) {
@@ -1410,23 +1322,23 @@ void Node::drawHavok()
 				a = size;
 				b = -size;
 
-				Transform t;
+				Transform t( center, 1.0f );
 				t.rotation = matrix;
-				t.translation = center;
-				glMultMatrix( t );
+				scene->multModelViewMatrix( t );
 			}
 
-			if ( Node::SELECTING ) {
-				setColorKeyFromID( nif->getBlockNumber( iBSMultiBoundData ) );
-				glLineWidth( GLView::Settings::lineWidthSelect );
-			} else {
-				glColor( Color4( 1.0f, 1.0f, 1.0f, 0.6f ) );
-				glDisable( GL_LIGHTING );
-				glLineWidth( GLView::Settings::lineWidthWireframe * 0.625f );
+			FloatVector4	color( 1.0f, 1.0f, 1.0f, 0.6f );
+			float	lineWidth = GLView::Settings::lineWidthWireframe * 0.625f;
+			if ( scene->selecting ) {
+				color = getColorKeyFromID( nif->getBlockNumber( iBSMultiBoundData ) );
+				lineWidth = GLView::Settings::lineWidthSelect;
 			}
 
-			drawBox( a, b );
-			glPopMatrix();
+			scene->setGLColor( color );
+			scene->setGLLineWidth( lineWidth );
+			scene->drawBox( a, b );
+
+			scene->popModelViewMatrix();
 		}
 	}
 
@@ -1443,22 +1355,18 @@ void Node::drawHavok()
 			Vector3 center = nif->get<Vector3>( iBound, "Center" );
 			Vector3 dim = nif->get<Vector3>( iBound, "Dimensions" );
 
-			glPushMatrix();
-			glLoadMatrix( scene->view );
 			// Not sure if world transform is taken into account
-			glMultMatrix( worldTrans() );
+			scene->pushAndMultModelViewMatrix( worldTrans() );
 
-			if ( Node::SELECTING ) {
-				setColorKeyFromID( nif->getBlockNumber( iBound ) );
-			} else {
-				glColor( Color3( 1.0f, 0.0f, 0.0f ) );
-				glDisable( GL_LIGHTING );
-			}
+			FloatVector4	color( 1.0f, 0.0f, 0.0f, 1.0f );
+			if ( scene->selecting )
+				color = getColorKeyFromID( nif->getBlockNumber( iBound ) );
 
-			glLineWidth( GLView::Settings::lineWidthWireframe * 0.625f );
-			drawBox( dim + center, -dim + center );
+			scene->setGLColor( color );
+			scene->setGLLineWidth( GLView::Settings::lineWidthWireframe * 0.625f );
+			scene->drawBox( dim + center, -dim + center );
 
-			glPopMatrix();
+			scene->popModelViewMatrix();
 		}
 	}
 
@@ -1468,71 +1376,60 @@ void Node::drawHavok()
 
 	QModelIndex iBody = nif->getBlockIndex( nif->getLink( iObject, "Body" ) );
 
-	glPushMatrix();
-	glLoadMatrix( scene->view );
-	glMultMatrix( scene->bhkBodyTrans.value( nif->getBlockNumber( iBody ) ) );
+	scene->multModelViewMatrix( scene->bhkBodyTrans.value( nif->getBlockNumber( iBody ) ) );
 
 
 	//qDebug() << "draw obj" << nif->getBlockNumber( iObject ) << nif->itemName( iObject );
 
-	if ( !Node::SELECTING ) {
+	if ( !scene->selecting ) {
 		glEnable( GL_DEPTH_TEST );
 		glDepthMask( GL_TRUE );
 		glDepthFunc( GL_LEQUAL );
-		glDisable( GL_TEXTURE_2D );
-		glDisable( GL_NORMALIZE );
-		glDisable( GL_LIGHTING );
-		glDisable( GL_COLOR_MATERIAL );
-		glEnable( GL_BLEND );
-		glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
-		glDisable( GL_ALPHA_TEST );
 	}
 
-	glPointSize( GLView::Settings::vertexPointSize );
-	glLineWidth( GLView::Settings::lineWidthWireframe );
+	scene->setGLPointSize( GLView::Settings::vertexPointSize );
+	scene->setGLLineWidth( GLView::Settings::lineWidthWireframe );
 
-	static const float colors[8][3] = {
-		{ 0.0f, 1.0f, 0.0f },
-		{ 1.0f, 0.0f, 0.0f },
-		{ 1.0f, 0.0f, 1.0f },
-		{ 1.0f, 1.0f, 1.0f },
-		{ 0.5f, 0.5f, 1.0f },
-		{ 1.0f, 0.8f, 0.0f },
-		{ 1.0f, 0.8f, 0.4f },
-		{ 0.0f, 1.0f, 1.0f }
+	static const FloatVector4 colors[8] = {
+		{ 0.0f, 1.0f, 0.0f, 1.0f },
+		{ 1.0f, 0.0f, 0.0f, 1.0f },
+		{ 1.0f, 0.0f, 1.0f, 1.0f },
+		{ 1.0f, 1.0f, 1.0f, 1.0f },
+		{ 0.5f, 0.5f, 1.0f, 1.0f },
+		{ 1.0f, 0.8f, 0.0f, 1.0f },
+		{ 1.0f, 0.8f, 0.4f, 1.0f },
+		{ 0.0f, 1.0f, 1.0f, 1.0f }
 	};
 
 	int color_index = nif->get<int>( iBody, "Layer" ) & 7;
-	glColor3fv( colors[ color_index ] );
+	scene->setGLColor( colors[ color_index ] );
 
-	if ( !Node::SELECTING ) {
+	if ( !scene->selecting ) {
 		if ( scene->currentBlock == nif->getBlockIndex( nif->getLink( iBody, "Shape" ) ) ) {
 			// fix: add selected visual to havok meshes
-			glHighlightColor(); // TODO: idea: I do not recommend mimicking the Open GL API
-			                    // It confuses the one who reads the code. And the Open GL API is
-			                    // in constant development.
-			glLineWidth( GLView::Settings::lineWidthHighlight );
-			//glPointSize( GLView::Settings::vertexSelectPointSize );
+			scene->setGLColor( scene->highlightColor );
+			scene->setGLLineWidth( GLView::Settings::lineWidthHighlight );
+			//scene->setGLPointSize( GLView::Settings::vertexSelectPointSize );
 		}
 	}
 
 	QStack<QModelIndex> shapeStack;
 
-	if ( Node::SELECTING )
-		glLineWidth( GLView::Settings::lineWidthSelect );	// make selection click a little more easy
+	if ( scene->selecting )
+		scene->setGLLineWidth( GLView::Settings::lineWidthSelect );	// make selection click a little more easy
 
-	drawHvkShape( nif, nif->getBlockIndex( nif->getLink( iBody, "Shape" ) ), shapeStack, scene, colors[ color_index ] );
+	Matrix4	m = *( scene->currentModelViewMatrix );
+	drawHvkShape( nif, nif->getBlockIndex( nif->getLink( iBody, "Shape" ) ), shapeStack,
+					scene, colors[ color_index ], m );
 
-	if ( Node::SELECTING && scene->hasOption(Scene::ShowAxes) ) {
-		setColorKeyFromID( nif->getBlockNumber( iBody ) );
+	if ( scene->selecting && scene->hasOption(Scene::ShowAxes) ) {
+		scene->setGLColor( getColorKeyFromID( nif->getBlockNumber( iBody ) ) );
 		glDepthFunc( GL_ALWAYS );
-		drawAxes( Vector3( nif->get<Vector4>( iBody, "Center" ) ), 1.0f / bhkScaleMult( nif ), false );
+		scene->drawAxes( Vector3( nif->get<Vector4>( iBody, "Center" ) ), 1.0f / bhkScaleMult( nif ), false );
 		glDepthFunc( GL_LEQUAL );
 	} else if ( scene->hasOption(Scene::ShowAxes) ) {
-		drawAxes( Vector3( nif->get<Vector4>( iBody, "Center" ) ), 1.0f / bhkScaleMult( nif ) );
+		scene->drawAxes( Vector3( nif->get<Vector4>( iBody, "Center" ) ), 1.0f / bhkScaleMult( nif ) );
 	}
-
-	glPopMatrix();
 
 	for ( const auto l : nif->getLinkArray( iBody, "Constraints" ) ) {
 		QModelIndex iConstraint = nif->getBlockIndex( l );
@@ -1542,7 +1439,7 @@ void Node::drawHavok()
 	}
 }
 
-void drawFurnitureMarker( const NifModel * nif, const QModelIndex & iPosition )
+void Node::drawFurnitureMarker( const NifModel * nif, const QModelIndex & iPosition )
 {
 	Vector3 offs = nif->get<Vector3>( iPosition, "Offset" );
 	quint16 orient = nif->get<quint16>( iPosition, "Orientation" );
@@ -1699,9 +1596,9 @@ void drawFurnitureMarker( const NifModel * nif, const QModelIndex & iPosition )
 		roll = float( orient ) / 6284.0 * 2.0 * (-M_PI);
 	}
 
-	if ( Node::SELECTING ) {
+	if ( scene->selecting ) {
 		GLint id = ( nif->getBlockNumber( iPosition ) & 0xffff ) | ( ( iPosition.row() & 0xffff ) << 16 );
-		setColorKeyFromID( id );
+		getColorKeyFromID( id );
 	}
 
 	for ( int n = 0; n < i; n++ ) {
@@ -1742,26 +1639,17 @@ void Node::drawFurn()
 	if ( !iExtraDataList.isValid() )
 		return;
 
-	if ( !Node::SELECTING ) {
+	if ( !scene->selecting ) {
 		glEnable( GL_DEPTH_TEST );
 		glDepthMask( GL_FALSE );
 		glDepthFunc( GL_LEQUAL );
-		glDisable( GL_TEXTURE_2D );
-		glDisable( GL_NORMALIZE );
-		glDisable( GL_LIGHTING );
-		glDisable( GL_COLOR_MATERIAL );
 		glDisable( GL_CULL_FACE );
-		glDisable( GL_BLEND );
-		glDisable( GL_ALPHA_TEST );
-		glColor4f( 1, 1, 1, 1 );
-		glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
+		scene->setGLColor( 1.0f, 1.0f, 1.0f, 1.0f );
 	}
 
-	glLineWidth( GLView::Settings::lineWidthWireframe * 0.625f );
+	scene->setGLLineWidth( GLView::Settings::lineWidthWireframe * 0.625f );
 
-	glPushMatrix();
-
-	glMultMatrix( viewTrans() );
+	scene->loadModelViewMatrix( viewTrans() );
 
 	for ( int p = 0; p < nif->rowCount( iExtraDataList ); p++ ) {
 		// DONE: never seen Furn in nifs, so there may be a need of a fix here later - saw one, fixed a bug
@@ -1779,15 +1667,13 @@ void Node::drawFurn()
 			QModelIndex iPosition = nif->getIndex( iPositions, j );
 
 			if ( scene->currentIndex == iPosition )
-				glHighlightColor();
+				scene->setGLColor( scene->highlightColor );
 			else
-				glNormalColor();
+				scene->setGLColor( scene->wireframeColor );
 
 			drawFurnitureMarker( nif, iPosition );
 		}
 	}
-
-	glPopMatrix();
 }
 
 void Node::drawShapes( NodeList * secondPass )

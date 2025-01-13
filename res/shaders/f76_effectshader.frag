@@ -1,5 +1,4 @@
-#version 120
-#extension GL_ARB_shader_texture_lod : require
+#version 410 core
 
 uniform sampler2D BaseMap;
 uniform sampler2D GreyscaleMap;
@@ -42,22 +41,26 @@ uniform float envReflection;
 
 uniform float fLumEmittance;
 
-varying vec3 LightDir;
-varying vec3 ViewDir;
+in vec3 LightDir;
+in vec3 ViewDir;
 
-varying vec4 A;
-varying vec4 C;
-varying vec4 D;
+in vec2 texCoord;
 
-varying mat3 btnMatrix;
-varying mat3 reflMatrix;
+in vec4 A;
+in vec4 C;
+in vec4 D;
+
+in mat3 btnMatrix;
+in mat3 reflMatrix;
+
+out vec4 fragColor;
 
 vec3 ViewDir_norm = normalize( ViewDir );
 mat3 btnMatrix_norm = mat3( normalize( btnMatrix[0] ), normalize( btnMatrix[1] ), normalize( btnMatrix[2] ) );
 
 vec4 colorLookup( float x, float y ) {
 
-	return texture2D( GreyscaleMap, vec2( clamp(x, 0.0, 1.0), clamp(y, 0.0, 1.0)) );
+	return texture( GreyscaleMap, vec2( clamp(x, 0.0, 1.0), clamp(y, 0.0, 1.0)) );
 }
 
 vec3 fresnelSchlickRoughness(float NdotV, vec3 F0, float roughness)
@@ -65,13 +68,13 @@ vec3 fresnelSchlickRoughness(float NdotV, vec3 F0, float roughness)
 	return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(1.0 - NdotV, 5.0);
 }
 
-void main( void )
+void main()
 {
-	vec2 offset = gl_TexCoord[0].st * uvScale + uvOffset;
+	vec2 offset = texCoord.st * uvScale + uvOffset;
 
-	vec4 baseMap = texture2D( BaseMap, offset );
-	vec4 normalMap = texture2D( NormalMap, offset );
-	vec4 reflMap = texture2D(ReflMap, offset);
+	vec4 baseMap = texture( BaseMap, offset );
+	vec4 normalMap = texture( NormalMap, offset );
+	vec4 reflMap = texture(ReflMap, offset);
 
 	vec3 normal = normalMap.rgb;
 	// Calculate missing blue channel
@@ -126,13 +129,13 @@ void main( void )
 	color.a = alphaMult * C.a * baseMap.a;
 
 	if ( greyscaleColor ) {
-		vec4 luG = colorLookup( texture2D( BaseMap, offset ).g, baseColor.r * C.r * falloff );
+		vec4 luG = colorLookup( texture( BaseMap, offset ).g, baseColor.r * C.r * falloff );
 
 		color.rgb = luG.rgb;
 	}
 
 	if ( greyscaleAlpha ) {
-		vec4 luA = colorLookup( texture2D( BaseMap, offset ).a, color.a );
+		vec4 luA = colorLookup( texture( BaseMap, offset ).a, color.a );
 
 		color.a = luA.a;
 	}
@@ -153,7 +156,7 @@ void main( void )
 	float g = 1.0;
 	float s = 1.0;
 	if ( hasSpecularMap && !isGlass ) {
-		vec4 lightingMap = texture2D(LightingMap, offset);
+		vec4 lightingMap = texture(LightingMap, offset);
 		s = lightingMap.r;
 		g = lightingMap.g;
 	}
@@ -162,14 +165,13 @@ void main( void )
 	// Environment
 	if ( hasCubeMap ) {
 		float	m = roughness * (roughness * -4.0 + 10.0);
-		vec3	cube = textureCubeLod( CubeMap, reflectedWS, max(m, 0.0) ).rgb;
+		vec3	cube = textureLod( CubeMap, reflectedWS, max(m, 0.0) ).rgb;
 		cube *= envReflection * g;
 		cube = mix( cube, cube * D.rgb, lightingInfluence );
 		if ( hasEnvMask )
-			cube *= texture2D( EnvironmentMap, offset ).rgb;
+			cube *= texture( EnvironmentMap, offset ).rgb;
 		color.rgb += cube * falloff;
 	}
 
-	gl_FragColor.rgb = color.rgb * D.a;
-	gl_FragColor.a = color.a;
+	fragColor = vec4( color.rgb * D.a, color.a );
 }

@@ -1,86 +1,62 @@
-#version 120
+#version 410 core
 
-varying vec3 LightDir;
-varying vec3 ViewDir;
+out vec3 LightDir;
+out vec3 ViewDir;
 
-varying vec4 C;
-varying vec4 D;
-varying vec4 A;
-varying float toneMapScale;
+out vec2 texCoord;
 
-varying vec3 N;
-varying vec3 t;
-varying vec3 b;
-varying vec3 v;
+out vec4 A;
+out vec4 C;
+out vec4 D;
 
-varying mat3 reflMatrix;
+out mat3 reflMatrix;
 
 uniform mat3 viewMatrix;
+uniform mat3 normalMatrix;
+uniform mat4 modelViewMatrix;
+uniform mat4 projectionMatrix;
+uniform vec4 lightSourcePosition[3];	// W0 = environment map rotation (-1.0 to 1.0), W1, W2 = viewport X, Y
+uniform vec4 lightSourceDiffuse[3];		// A0 = overall brightness, A1, A2 = viewport width, height
+uniform vec4 lightSourceAmbient;		// A = tone mapping control (1.0 = full tone mapping)
 
-mat4 inverse(mat4 m) {
-  float
-      a00 = m[0][0], a01 = m[0][1], a02 = m[0][2], a03 = m[0][3],
-      a10 = m[1][0], a11 = m[1][1], a12 = m[1][2], a13 = m[1][3],
-      a20 = m[2][0], a21 = m[2][1], a22 = m[2][2], a23 = m[2][3],
-      a30 = m[3][0], a31 = m[3][1], a32 = m[3][2], a33 = m[3][3],
+uniform vec4 vertexColorOverride;	// components greater than zero replace the vertex color
 
-      b00 = a00 * a11 - a01 * a10,
-      b01 = a00 * a12 - a02 * a10,
-      b02 = a00 * a13 - a03 * a10,
-      b03 = a01 * a12 - a02 * a11,
-      b04 = a01 * a13 - a03 * a11,
-      b05 = a02 * a13 - a03 * a12,
-      b06 = a20 * a31 - a21 * a30,
-      b07 = a20 * a32 - a22 * a30,
-      b08 = a20 * a33 - a23 * a30,
-      b09 = a21 * a32 - a22 * a31,
-      b10 = a21 * a33 - a23 * a31,
-      b11 = a22 * a33 - a23 * a32,
+layout ( location = 0 ) in vec3	vertexPosition;
+layout ( location = 1 ) in vec4	vertexColor;
+layout ( location = 2 ) in vec3	normalVector;
+layout ( location = 3 ) in vec3	tangentVector;
+layout ( location = 4 ) in vec3	bitangentVector;
+layout ( location = 7 ) in vec2	multiTexCoord0;
 
-      det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+#include "bonetransform.glsl"
 
-  return mat4(
-      a11 * b11 - a12 * b10 + a13 * b09,
-      a02 * b10 - a01 * b11 - a03 * b09,
-      a31 * b05 - a32 * b04 + a33 * b03,
-      a22 * b04 - a21 * b05 - a23 * b03,
-      a12 * b08 - a10 * b11 - a13 * b07,
-      a00 * b11 - a02 * b08 + a03 * b07,
-      a32 * b02 - a30 * b05 - a33 * b01,
-      a20 * b05 - a22 * b02 + a23 * b01,
-      a10 * b10 - a11 * b08 + a13 * b06,
-      a01 * b08 - a00 * b10 - a03 * b06,
-      a30 * b04 - a31 * b02 + a33 * b00,
-      a21 * b02 - a20 * b04 - a23 * b00,
-      a11 * b07 - a10 * b09 - a12 * b06,
-      a00 * b09 - a01 * b07 + a02 * b06,
-      a31 * b01 - a30 * b03 - a32 * b00,
-      a20 * b03 - a21 * b01 + a22 * b00) / det;
-}
-
-void main( void )
+void main()
 {
-	gl_Position = ftransform();
-	gl_TexCoord[0] = gl_MultiTexCoord0;
+	vec4	v = vec4( vertexPosition, 1.0 );
+	vec3	n = normalVector;
+	vec3	t = tangentVector;
+	vec3	b = bitangentVector;
 
-	N = normalize(gl_NormalMatrix * gl_Normal);
-	t = normalize(gl_NormalMatrix * gl_MultiTexCoord1.xyz);
-	b = normalize(gl_NormalMatrix * gl_MultiTexCoord2.xyz);
+	if ( numBones > 0 )
+		boneTransform( v, n, t, b );
+
+	v = modelViewMatrix * v;
+	gl_Position = projectionMatrix * v;
+	texCoord = multiTexCoord0;
 
 	// NOTE: b<->t
-	mat3 tbnMatrix = mat3(b.x, t.x, N.x,
-						  b.y, t.y, N.y,
-						  b.z, t.z, N.z);
+	mat3 btnMatrix = mat3( normalize(b * normalMatrix), normalize(t * normalMatrix), normalize(n * normalMatrix) );
+	btnMatrix = transpose( btnMatrix );
 
-	v = vec3(gl_ModelViewMatrix * gl_Vertex);
+	reflMatrix = btnMatrix * viewMatrix;
 
-	reflMatrix = viewMatrix * transpose(tbnMatrix);
+	if ( projectionMatrix[3][3] == 1.0 )
+		ViewDir = btnMatrix * vec3(0.0, 0.0, 1.0);	// orthographic view
+	else
+		ViewDir = btnMatrix * -v.xyz;
+	LightDir = btnMatrix * lightSourcePosition[0].xyz;
 
-	ViewDir = tbnMatrix * -v.xyz;
-	LightDir = tbnMatrix * gl_LightSource[0].position.xyz;
-
-	C = gl_Color;
-	D = vec4( sqrt(gl_LightSource[0].diffuse.rgb), 1.0 );
-	A = vec4( sqrt(gl_LightSource[0].ambient.rgb) * 0.375, 1.0 );
-	toneMapScale = gl_LightSource[0].ambient.a;
+	A = vec4( sqrt(lightSourceAmbient.rgb) * 0.375, lightSourceAmbient.a );
+	C = mix( vertexColor, vertexColorOverride, greaterThan( vertexColorOverride, vec4( 0.0 ) ) );
+	D = vec4( sqrt(lightSourceDiffuse[0].rgb), lightSourceDiffuse[0].a );
 }

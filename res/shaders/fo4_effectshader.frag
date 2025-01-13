@@ -1,4 +1,4 @@
-#version 120
+#version 410 core
 
 uniform sampler2D BaseMap;
 uniform sampler2D GreyscaleMap;
@@ -35,31 +35,35 @@ uniform float falloffDepth;
 uniform float lightingInfluence;
 uniform float envReflection;
 
-varying vec3 LightDir;
-varying vec3 ViewDir;
+in vec3 LightDir;
+in vec3 ViewDir;
 
-varying vec4 A;
-varying vec4 C;
-varying vec4 D;
+in vec2 texCoord;
 
-varying mat3 btnMatrix;
-varying mat3 reflMatrix;
+in vec4 A;
+in vec4 C;
+in vec4 D;
+
+in mat3 btnMatrix;
+in mat3 reflMatrix;
+
+out vec4 fragColor;
 
 vec3 ViewDir_norm = normalize( ViewDir );
 mat3 btnMatrix_norm = mat3( normalize( btnMatrix[0] ), normalize( btnMatrix[1] ), normalize( btnMatrix[2] ) );
 
 vec4 colorLookup( float x, float y ) {
 
-	return texture2D( GreyscaleMap, vec2( clamp(x, 0.0, 1.0), clamp(y, 0.0, 1.0)) );
+	return texture( GreyscaleMap, vec2( clamp(x, 0.0, 1.0), clamp(y, 0.0, 1.0)) );
 }
 
-void main( void )
+void main()
 {
-	vec2 offset = gl_TexCoord[0].st * uvScale + uvOffset;
+	vec2 offset = texCoord.st * uvScale + uvOffset;
 
-	vec4 baseMap = texture2D( BaseMap, offset );
-	vec4 normalMap = texture2D( NormalMap, offset );
-	vec4 specMap = texture2D( SpecularMap, offset );
+	vec4 baseMap = texture( BaseMap, offset );
+	vec4 normalMap = texture( NormalMap, offset );
+	vec4 specMap = texture( SpecularMap, offset );
 
 	vec3 normal = normalize(normalMap.rgb * 2.0 - 1.0);
 	// Calculate missing blue channel
@@ -108,13 +112,13 @@ void main( void )
 	color.a = alphaMult * C.a * baseMap.a;
 
 	if ( greyscaleColor ) {
-		vec4 luG = colorLookup( texture2D( BaseMap, offset ).g, baseColor.r * C.r * falloff );
+		vec4 luG = colorLookup( texture( BaseMap, offset ).g, baseColor.r * C.r * falloff );
 
 		color.rgb = luG.rgb;
 	}
 
 	if ( greyscaleAlpha ) {
-		vec4 luA = colorLookup( texture2D( BaseMap, offset ).a, color.a );
+		vec4 luA = colorLookup( texture( BaseMap, offset ).a, color.a );
 
 		color.a = luA.a;
 	}
@@ -140,7 +144,7 @@ void main( void )
 	}
 
 	// Environment
-	vec4 cube = textureCube( CubeMap, reflectedWS );
+	vec4 cube = texture( CubeMap, reflectedWS );
 	if ( hasCubeMap ) {
 		cube.rgb *= envReflection * s;
 		cube.rgb = mix( cube.rgb, cube.rgb * D.rgb, lightingInfluence );
@@ -148,6 +152,5 @@ void main( void )
 		color.rgb += cube.rgb * falloff;
 	}
 
-	gl_FragColor.rgb = color.rgb * D.a;
-	gl_FragColor.a = color.a;
+	fragColor = vec4( color.rgb * D.a, color.a );
 }
