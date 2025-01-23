@@ -222,7 +222,6 @@ void NifTreeView::pasteTo( const QModelIndex iDest, const NifValue & srcValue )
 	case NifValue::tMatrix4:
 		item->set<Matrix4>( srcValue.get<Matrix4>( nif, nullptr ) );
 		break;
-	case NifValue::tString:
 	case NifValue::tSizedString:
 	case NifValue::tSizedString16:
 	case NifValue::tText:

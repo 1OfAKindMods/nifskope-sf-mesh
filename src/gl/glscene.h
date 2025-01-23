@@ -306,6 +306,7 @@ public:
 	void drawSpring( const Vector3 & a, const Vector3 & b, float stiffness, int sd = 16, bool solid = false );
 	void drawRail( const Vector3 & a, const Vector3 & b );
 	void renderText( const Vector3 & c, const QString & str );
+	NifSkopeOpenGLContext::Program * setupProgram( std::string_view name, unsigned int elementMode );
 
 	// vec3 position, vec4 color, vec3 normal, vec3 tangent, vec3 bitangent, vec4 weights0, vec4 weights1,
 	// vec2 texcoord0, ..., vec2 texcoord8

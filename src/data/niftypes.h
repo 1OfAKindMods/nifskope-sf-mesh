@@ -814,7 +814,7 @@ inline Vector3::Vector3( const Vector4 & v4 )
 class ByteVector4 : public Vector4
 {
 public:
-	ByteVector4() : Vector4( FloatVector4( 0.0f, 0.0f, 1.0f, 1.0f ) )
+	ByteVector4( FloatVector4 v = FloatVector4( 0.0f, 0.0f, 1.0f, 1.0f ) ) : Vector4( v )
 	{
 	}
 
@@ -831,7 +831,7 @@ public:
 class UDecVector4 : public Vector4
 {
 public:
-	UDecVector4() : Vector4( FloatVector4( 0.0f, 0.0f, 1.0f, 1.0f ) )
+	UDecVector4( FloatVector4 v = FloatVector4( 0.0f, 0.0f, 1.0f, 1.0f ) ) : Vector4( v )
 	{
 	}
 
@@ -1602,7 +1602,7 @@ class ByteColor4 : public Color4
 {
 public:
 	//! Default constructor
-	ByteColor4() { rgba[0] = rgba[1] = rgba[2] = rgba[3] = 1.0; }
+	ByteColor4( FloatVector4 c = FloatVector4( 1.0f ) ) : Color4( c ) {}
 	ByteColor4( const std::uint32_t & c )
 		: Color4( FloatVector4(c) / 255.0f )
 	{
@@ -1617,7 +1617,7 @@ class ByteColor4BGRA : public Color4
 {
 public:
 	//! Default constructor
-	ByteColor4BGRA() { rgba[0] = rgba[1] = rgba[2] = rgba[3] = 1.0; }
+	ByteColor4BGRA( FloatVector4 c = FloatVector4( 1.0f ) ) : Color4( c ) {}
 	ByteColor4BGRA( const std::uint32_t & c )
 		: Color4( FloatVector4(c).shuffleValues(0xC6) / 255.0f )
 	{
@@ -2249,53 +2249,8 @@ typedef enum {
 	HAS_TANGENT_BP   = 1 << E_TANGENT_BP,
 } SemanticFlags;
 
-#define SEM(string) {#string, E_##string},
+extern const QMap<QString, Semantic> semanticStrings;
 
-const QMap<QString, Semantic> semanticStrings = {
-	// Vertex semantics
-	SEM( POSITION )
-	SEM( NORMAL )
-	SEM( BINORMAL )
-	SEM( TANGENT )
-	SEM( TEXCOORD )
-	SEM( BLENDWEIGHT )
-	SEM( BLENDINDICES )
-	SEM( COLOR )
-	SEM( PSIZE )
-	SEM( TESSFACTOR )
-	SEM( DEPTH )
-	SEM( FOG )
-	SEM( POSITIONT )
-	SEM( SAMPLE )
-	SEM( DATASTREAM )
-	SEM( INDEX )
-
-	// Skinning semantics
-	SEM( BONEMATRICES )
-	SEM( BONE_PALETTE )
-	SEM( UNUSED0 )
-	SEM( POSITION_BP )
-	SEM( NORMAL_BP )
-	SEM( BINORMAL_BP )
-	SEM( TANGENT_BP )
-
-	// Morph weights semantics
-	SEM( MORPHWEIGHTS )
-
-	// Normal sharing semantics, for use in runtime normal calculation
-	SEM( NORMALSHAREINDEX )
-	SEM( NORMALSHAREGROUP )
-
-	// Instancing Semantics
-	SEM( TRANSFORMS )
-	SEM( INSTANCETRANSFORMS )
-
-	// Display list semantics
-	SEM( DISPLAYLIST )
-};
-#undef SEM
-#undef UN
-
-};
+}	// namespace NiMesh
 
 #endif

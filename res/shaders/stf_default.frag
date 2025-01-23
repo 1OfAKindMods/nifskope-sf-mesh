@@ -204,6 +204,8 @@ struct LayeredMaterial {
 	DetailBlenderSettings	detailBlender;
 };
 
+#include "uniforms.glsl"
+
 uniform samplerCube	CubeMap;
 uniform samplerCube	CubeMap2;
 uniform bool	hasCubeMap;
@@ -211,7 +213,6 @@ uniform bool	hasSpecular;
 
 uniform sampler2D	textureUnits[NUM_TEXTURE_UNITS];
 
-uniform vec4 parallaxOcclusionSettings;	// min. steps, max. steps, height scale, height offset
 // bit 0: alpha testing, bit 1: alpha blending
 uniform int alphaFlags;
 
@@ -222,12 +223,9 @@ in vec3 ViewDir;
 
 in vec4 texCoord;
 
-in vec4 A;
 in vec4 C;
-in vec4 D;
 
 in mat3 btnMatrix;
-in mat3 reflMatrix;
 
 out vec4 fragColor;
 
@@ -245,13 +243,13 @@ float emissiveIntensity( bool useAdaptive, bool adaptiveLimits, vec4 luminancePa
 	float	l = luminanceParams[0];	// luminousEmittance
 
 	if ( useAdaptive ) {
-		l = dot( A.rgb * 20.0 + D.rgb * 80.0, vec3(0.2126, 0.7152, 0.0722) );
+		l = dot( lightSourceAmbient.rgb * 20.0 + lightSourceDiffuse[0].rgb * 80.0, vec3(0.2126, 0.7152, 0.0722) );
 		l = l * exp2( luminanceParams[1] );	// exposureOffset
 		if ( adaptiveLimits )	// minOffsetEmittance, maxOffsetEmittance
 			l = clamp( l, luminanceParams[3], luminanceParams[2] );
 	}
 
-	return sqrt( l * 0.01 );
+	return sqrt( l * 0.01 ) * lightingControls.z;
 }
 
 float LightingFuncGGX_REF( float NdotH, float NdotL, float NdotV, float roughness )
@@ -330,17 +328,17 @@ float getBlenderMask(int n)
 
 vec2 parallaxMapping( int n, vec3 V, vec2 offset )
 {
-	if ( parallaxOcclusionSettings.z < 0.0005 )
+	if ( renderOptions2.x < 0.0005 )
 		return offset;	// disabled
 
 	// determine optimal height of each layer
-	float	layerHeight = 1.0 / mix( parallaxOcclusionSettings.y, parallaxOcclusionSettings.x, abs(V.z) );
+	float	layerHeight = 1.0 / mix( float(renderOptions1.w), 8.0, abs(V.z) );
 
 	// current height of the layer
 	float	curLayerHeight = 1.0;
-	vec2	dtex = parallaxOcclusionSettings.z * V.xy / max( abs(V.z), 0.02 );
+	vec2	dtex = renderOptions2.x * V.xy / max( abs(V.z), 0.02 );
 	// current texture coordinates
-	vec2	currentTextureCoords = offset + ( dtex * parallaxOcclusionSettings.w );
+	vec2	currentTextureCoords = offset + ( dtex * renderOptions2.y );
 	// shift of texture coordinates for each layer
 	dtex *= layerHeight;
 
@@ -621,15 +619,16 @@ void main()
 	float	NdotV = abs(dot(normal, V));
 	float	LdotH = dot(L, H);
 
-	vec3	reflectedWS = reflMatrix * R;
-	vec3	normalWS = reflMatrix * normal;
+	vec3	reflectedWS = envMapRotation * R;
+	vec3	normalWS = envMapRotation * normal;
 
 	vec3	f0 = mix(vec3(0.04), baseMap, pbrMap.g);
 	vec3	albedo = baseMap * (1.0 - pbrMap.g);
 
 	// Specular
 	float	roughness = pbrMap.r;
-	vec3	spec = D.rgb * LightingFuncGGX_REF( NdotH, NdotL0, NdotV, clamp(roughness, 0.045, 0.95) );
+	vec3	spec = lightSourceDiffuse[0].rgb;
+	spec *= LightingFuncGGX_REF( NdotH, NdotL0, NdotV, clamp(roughness, 0.045, 0.95) );
 
 	// Diffuse
 	vec3	diffuse = vec3(NdotL0);
@@ -643,7 +642,7 @@ void main()
 
 	// Environment
 	vec3	refl = vec3(0.0);
-	vec3	ambient = A.rgb;
+	vec3	ambient = lightSourceAmbient.rgb;
 	if ( hasCubeMap ) {
 		float	m = roughness * (roughness * -4.0 + 10.0);
 		refl = textureLod(CubeMap, reflectedWS, max(m, 0.0)).rgb;
@@ -668,7 +667,7 @@ void main()
 	refl *= f * envLUT.g;
 
 	// Diffuse
-	color.rgb = ( diffuse * D.rgb + ambient ) * albedo * ao;
+	color.rgb = ( diffuse * lightSourceDiffuse[0].rgb + ambient ) * albedo * ao;
 	// Specular
 	color.rgb += ( spec + refl ) * specOcc;
 
@@ -684,14 +683,14 @@ void main()
 	if ( lm.translucencySettings.isEnabled && lm.translucencySettings.isThin ) {
 		transmissive *= albedo * ( vec3(1.0) - f ) * ao;
 		// TODO: implement flipBackFaceNormalsInViewSpace
-		color.rgb += transmissive * D.rgb * max( -NdotL, 0.0 );
+		color.rgb += transmissive * lightSourceDiffuse[0].rgb * max( -NdotL, 0.0 );
 		if ( hasCubeMap )
-			color.rgb += textureLod( CubeMap2, -normalWS, 0.0 ).rgb * transmissive * A.rgb;
+			color.rgb += textureLod( CubeMap2, -normalWS, 0.0 ).rgb * transmissive * lightSourceAmbient.rgb;
 		else
-			color.rgb += transmissive * A.rgb * 0.08;
+			color.rgb += transmissive * lightSourceAmbient.rgb * 0.08;
 	}
 
-	color.rgb = tonemap(color.rgb * D.a, A.a);
+	color.rgb = tonemap( color.rgb * lightingControls.y, lightingControls.x );
 
 	fragColor = color;
 }

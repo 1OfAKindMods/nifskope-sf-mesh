@@ -37,7 +37,7 @@ uniform bool hasTintColor;
 uniform float lightingEffect1;
 uniform float lightingEffect2;
 
-uniform mat3 viewMatrix;
+uniform mat4 modelViewMatrix;
 
 in vec3 LightDir;
 in vec3 ViewDir;
@@ -47,11 +47,12 @@ in vec2 texCoord;
 in vec4 A;
 in vec4 C;
 in vec4 D;
+in float glowScale;
 
 out vec4 fragColor;
 
 
-vec3 tonemap(vec3 x, float y)
+vec3 tonemap(vec3 x)
 {
 	float a = 0.15;
 	float b = 0.50;
@@ -60,9 +61,9 @@ vec3 tonemap(vec3 x, float y)
 	float e = 0.02;
 	float f = 0.30;
 
-	vec3 z = x * (y * 4.22978723);
+	vec3 z = x * x * D.a * (A.a * 4.22978723);
 	z = (z * (a * z + b * c) + d * e) / (z * (a * z + b) + d * f) - e / f;
-	return z / (y * 0.93333333);
+	return sqrt(z / (A.a * 0.93333333));
 }
 
 vec3 toGrayscale(vec3 color)
@@ -109,7 +110,7 @@ void main()
 
 	// Convert model space to view space
 	//	Swizzled G/B values!
-	normal = normalize( viewMatrix * normal.rbg );
+	normal = normalize( mat3(modelViewMatrix) * normal.rbg );
 
 	// Face Normals
 	//vec3 X = dFdx(v);
@@ -202,8 +203,8 @@ void main()
 		albedo *= tintColor;
 	}
 
-	color.rgb = albedo * (diffuse + emissive) + spec;
-	color.rgb = tonemap( color.rgb * D.a, A.a );
+	color.rgb = albedo * (diffuse + emissive * glowScale) + spec;
+	color.rgb = tonemap( color.rgb );
 
 	fragColor = color;
 }

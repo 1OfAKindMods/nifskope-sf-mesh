@@ -117,7 +117,7 @@
                 <string>Antialiasing</string>
                </property>
                <property name="buddy">
-                <cstring>antialiasing</cstring>
+                <cstring>msaaSamples</cstring>
                </property>
               </widget>
              </item>

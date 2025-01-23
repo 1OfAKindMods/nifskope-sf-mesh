@@ -1,5 +1,7 @@
 #version 410 core
 
+#include "uniforms.glsl"
+
 uniform sampler2D BaseMap;
 uniform sampler2D GreyscaleMap;
 uniform samplerCube CubeMap;
@@ -46,12 +48,10 @@ in vec3 ViewDir;
 
 in vec2 texCoord;
 
-in vec4 A;
 in vec4 C;
-in vec4 D;
 
 in mat3 btnMatrix;
-in mat3 reflMatrix;
+flat in mat3 reflMatrix;
 
 out vec4 fragColor;
 
@@ -149,8 +149,8 @@ void main()
 			discard;
 	}
 
-	vec3 diffuse = A.rgb + (D.rgb * NdotL);
-	color.rgb = mix( color.rgb, color.rgb * D.rgb, lightingInfluence );
+	vec3 diffuse = lightSourceAmbient.rgb + (lightSourceDiffuse[0].rgb * NdotL);
+	color.rgb = mix( color.rgb, color.rgb * lightSourceDiffuse[0].rgb, lightingInfluence );
 
 	// Specular
 	float g = 1.0;
@@ -167,11 +167,11 @@ void main()
 		float	m = roughness * (roughness * -4.0 + 10.0);
 		vec3	cube = textureLod( CubeMap, reflectedWS, max(m, 0.0) ).rgb;
 		cube *= envReflection * g;
-		cube = mix( cube, cube * D.rgb, lightingInfluence );
+		cube = mix( cube, cube * lightSourceDiffuse[0].rgb, lightingInfluence );
 		if ( hasEnvMask )
 			cube *= texture( EnvironmentMap, offset ).rgb;
 		color.rgb += cube * falloff;
 	}
 
-	fragColor = vec4( color.rgb * D.a, color.a );
+	fragColor = vec4( color.rgb * lightingControls.y, color.a );
 }

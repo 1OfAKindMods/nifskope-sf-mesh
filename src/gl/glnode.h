@@ -145,16 +145,14 @@ protected:
 	void setController( const NifModel * nif, const QModelIndex & controller ) override;
 	void updateImpl( const NifModel * nif, const QModelIndex & block ) override;
 
+	// set the vertex color override uniform for the current shader program
 	void setGLColor( FloatVector4 c ) const;
 
-	// Old Options API
-	//	TODO: Move away from the GL-like naming
-	void glHighlightColor() const;
-	void glNormalColor() const;
-
-	void drawVertexSelection( QVector<Vector3> & verts, int i );
-	void drawTriangleSelection( QVector<Vector3> const & verts, Triangle const & tri );
-	void drawTriangleIndex( QVector<Vector3> const & verts, Triangle const & tri, int index );
+	// mesh data needs to be bound before calling the following two functions
+	void drawVertexSelection( qsizetype numVerts, int i );
+	void drawTriangleSelection( const QVector<Triangle> & triangles, int i, int n = 1,
+								int startVertex = 0, int endVertex = -1 );
+	void drawTriangleIndex( const QVector<Vector3> & verts, const Triangle & t, int i );
 	void drawHvkShape( const NifModel * nif, const QModelIndex & iShape, QStack<QModelIndex> & stack,
 						Scene * scene, FloatVector4 origin_color4fv, const Matrix4 & parentTransform );
 	void drawHvkConstraint( const NifModel * nif, const QModelIndex & iConstraint, Scene * scene );

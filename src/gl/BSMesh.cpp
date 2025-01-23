@@ -17,11 +17,15 @@ BSMesh::BSMesh(Scene* s, const QModelIndex& iBlock) : Shape(s, iBlock)
 
 void BSMesh::transformShapes()
 {
-	// TODO: implement this
-#if 0
 	if ( isHidden() )
 		return;
-#endif
+
+	if ( !( isSkinned && scene->hasOption(Scene::DoSkinning) ) ) [[likely]] {
+		transformRigid = true;
+		return;
+	}
+
+	updateBoneTransforms();
 }
 
 void BSMesh::drawShapes( NodeList * secondPass )
@@ -151,7 +155,7 @@ void BSMesh::drawSelection() const
 		if ( n == p )
 			s = idx.row();
 		Shape::drawVerts( GLView::Settings::tbnPointSize, s );
-		float	normalScale = std::max< float >( boundSphere.radius / 8.0f, 2.5f / 512.0f ) * viewTrans().scale;
+		float	normalScale = std::max< float >( boundSphere.radius / 16.0f, 2.5f / 512.0f ) * viewTrans().scale;
 		Shape::drawNormals( btnMask, s, normalScale );
 	} else if ( n == "Skin" ) {
 		auto	iSkin = nif->getBlockIndex( nif->getLink( idx.parent(), "Skin" ) );
@@ -201,12 +205,9 @@ void BSMesh::drawSelection() const
 
 				// generate meshlet color from index
 				std::uint32_t	j = std::uint32_t( i );
-				j = ( ( j & 0x0001U ) << 7 ) | ( ( j & 0x0008U ) << 3 ) | ( ( j & 0x0040U ) >> 1 )
-					| ( ( j & 0x0200U ) >> 5 ) | ( ( j & 0x1000U ) >> 9 )
-					| ( ( j & 0x0002U ) << 14 ) | ( ( j & 0x0010U ) << 10 ) | ( ( j & 0x0080U ) << 6 )
-					| ( ( j & 0x0400U ) << 2 ) | ( ( j & 0x2000U ) >> 2 )
-					| ( ( j & 0x0004U ) << 21 ) | ( ( j & 0x0020U ) << 17 ) | ( ( j & 0x0100U ) << 13 )
-					| ( ( j & 0x0800U ) << 9 ) | ( ( j & 0x4000U ) << 5 );
+				j = ( j & 0x1249U ) | ( ( j & 0x2492U ) << 7 ) | ( ( j & 0x4924U ) << 14 );
+				j = ( ( j & 0x00010101U ) << 7 ) | ( ( j & 0x00080808U ) << 3 )
+					| ( ( j & 0x00404040U ) >> 1 ) | ( ( j & 0x02020200U ) >> 5 ) | ( ( j & 0x10101000U ) >> 9 );
 				j = ~j;
 				Shape::drawTriangles( triangleOffset, triangleCount, FloatVector4( j ) / 255.0f );
 				triangleOffset += triangleCount;
@@ -389,6 +390,8 @@ void BSMesh::updateData(const NifModel* nif)
 	resetSkinning();
 	resetVertexData();
 	resetSkeletonData();
+	skinID = -1;
+	numWeights = 0;
 	gpuLODs.clear();
 	boneNames.clear();
 
@@ -404,6 +407,7 @@ void BSMesh::updateData(const NifModel* nif)
 
 	lodLevel = std::min(scene->lodLevel, Scene::LodLevel(lodCount - 1));
 
+	const BoneWeightsUNorm *	weights = nullptr;
 	auto meshIndex = (hasMeshLODs) ? 0 : lodLevel;
 	if ( lodCount > int(lodLevel) ) {
 		auto& mesh = meshes[meshIndex];
@@ -425,7 +429,11 @@ void BSMesh::updateData(const NifModel* nif)
 		norms = mesh->normals;
 		bitangents = mesh->tangents;
 		mesh->calculateBitangents( tangents );
-		weightsUNORM = mesh->weights;
+		boneWeights0.clear();
+		boneWeights1.clear();
+		numWeights = int( mesh->weights.size() );
+		if ( numWeights >= verts.size() )
+			weights = mesh->weights.constData();
 		gpuLODs = mesh->lods;
 
 		boundSphere = BoundSphere( verts );
@@ -444,6 +452,7 @@ void BSMesh::updateData(const NifModel* nif)
 			boneData.fill( BoneData(), numBones );
 
 			auto iBones = nif->getLinkArray(iSkin, "Bones");
+			qsizetype validBones = 0;
 			for ( qsizetype i = 0; i < iBones.size(); i++ ) {
 				auto b = iBones.at( i );
 				if ( i < numBones )
@@ -452,11 +461,36 @@ void BSMesh::updateData(const NifModel* nif)
 					continue;
 				auto iBone = nif->getBlockIndex(b);
 				boneNames.append(nif->resolveString(iBone, "Name"));
+				validBones++;
 			}
+			isSkinned = ( validBones >= numBones );
 
 			auto iBoneList = nif->getIndex(iSkinData, "Bone List");
 			for ( int i = 0; i < numBones; i++ )
 				boneData[i].setTransform( nif, nif->getIndex( iBoneList, i ) );
+
+			if ( weights && isSkinned ) {
+				size_t	numVerts = size_t( verts.size() );
+				boneWeights0.assign( numVerts, FloatVector4( 0.0f ) );
+				for ( size_t i = 0; i < numVerts; i++ ) {
+					size_t	k = 0;
+					for ( const auto & bw : weights[i].weightsUNORM ) {
+						unsigned int	b = bw.bone;
+						float	w = bw.weight;
+						if ( b < (unsigned int) numBones && b < 256U && w > ( !b ? 0.00005f : 0.00001f ) ) {
+							w = float( int(b) ) + ( std::min( w, 1.0f ) * float( 65535.0 / 65536.0 ) );
+							if ( k < 4 ) {
+								boneWeights0[i][k] = w;
+							} else if ( k < 8 ) {
+								if ( boneWeights1.size() < numVerts ) [[unlikely]]
+									boneWeights1.assign( numVerts, FloatVector4( 0.0f ) );
+								boneWeights1[i][k & 3] = w;
+							}
+							k++;
+						}
+					}
+				}
+			}
 		}
 	}
 	// Do after dependent blocks above

@@ -132,14 +132,13 @@ protected:
 	bool transformRigid = true;
 
 	//! Bone transforms as 4x3 matrices in row-major order
-	QVector<FloatVector4> boneTransforms;
+	std::vector<FloatVector4> boneTransforms;
 	//! Bone weights 0 to 3 (integer part = bone index, fractional part = weight * 65535.0 / 65536.0), terminated by 0.0
-	QVector<FloatVector4> boneWeights0;
+	std::vector<FloatVector4> boneWeights0;
 	//! Bone weights 4 to 7 (may be empty if the maximum number of weights per vertex is 4 or less)
-	QVector<FloatVector4> boneWeights1;
+	std::vector<FloatVector4> boneWeights1;
 
 	int skeletonRoot = 0;
-	Transform skeletonTrans;
 	QVector<int> bones;
 	QVector<BoneData> boneData;
 	QVector<SkinPartition> partitions;

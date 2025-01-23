@@ -3,7 +3,7 @@
 layout ( lines ) in;
 layout ( triangle_strip, max_vertices = 4 ) out;
 
-uniform mat4 projectionMatrix;
+#include "uniforms.glsl"
 
 in vec4 vsColor[];
 out vec4 C;

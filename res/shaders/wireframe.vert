@@ -4,7 +4,9 @@ out mat3 btnMatrix;
 
 out vec4 vsColor;
 
-uniform mat3 normalMatrix;
+#include "uniforms.glsl"
+
+uniform mat3 normalMatrix;			// in row-major order
 uniform mat4 modelViewMatrix;
 
 uniform vec4 vertexColorOverride;	// components greater than zero replace the vertex color
@@ -26,7 +28,7 @@ void main()
 	vec3	t = tangentVector;
 	vec3	b = bitangentVector;
 
-	if ( numBones > 0 )
+	if ( boneWeights[0] > 0.0 && renderOptions1.x != 0 )
 		boneTransform( v, n, t, b );
 
 	gl_Position = modelViewMatrix * v;

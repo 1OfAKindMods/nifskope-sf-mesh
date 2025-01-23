@@ -1,8 +1,4 @@
-layout ( location = 5 ) in vec4	boneWeights0;
-layout ( location = 6 ) in vec4	boneWeights1;
-
-uniform int numBones;
-uniform mat3x4 boneTransforms[MAX_NUM_BONES];
+layout ( location = 5 ) in float	boneWeights[8];
 
 #ifdef BT_POSITION_ONLY
 void boneTransform( inout vec4 v )
@@ -22,16 +18,10 @@ void boneTransform( inout vec4 v, inout vec3 n, inout vec3 t, inout vec3 b )
 #endif
 	float	wSum = 0.0;
 	for ( int i = 0; i < 8; i++ ) {
-		float	bw;
-		if ( i < 4 )
-			bw = boneWeights0[i];
-		else
-			bw = boneWeights1[i & 3];
+		float	bw = boneWeights[i];
 		if ( !( bw > 0.0 ) )
 			break;
-		int	bone = int( bw );
-		if ( bone >= numBones )
-			continue;
+		int	bone = int( bw ) & 0xFF;
 		float	w = fract( bw );
 		mat3x4	m = boneTransforms[bone];
 		vTmp += v * m * w;

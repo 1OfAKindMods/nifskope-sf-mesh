@@ -71,7 +71,6 @@ bool ValueEdit::canEdit( NifValue::Type t )
 	case NifValue::tChar8String:
 	case NifValue::tShortString:
 	case NifValue::tStringIndex:
-	case NifValue::tString:
 	case NifValue::tVector4:
 	case NifValue::tByteVector4:
 	case NifValue::tUDecVector4:
@@ -362,34 +361,6 @@ void ValueEdit::setValue( const NifValue & v )
 			TriangleEdit * te = new TriangleEdit( this );
 			te->setTriangle( v.get<Triangle>( nullptr, nullptr ) );
 			edit = te;
-		}
-		break;
-	case NifValue::tString:
-		{
-			if ( /*???*/ false ) {
-				QSpinBox * ie = new UIntSpinBox( this );
-				ie->setFrame( false );
-				ie->setValue( v.toCount( nullptr, nullptr ) );
-				edit = ie;
-			} else {
-				QLineEdit * le = new QLineEdit( this );
-				le->setText( v.toString() );
-				edit = le;
-			}
-		}
-		break;
-	case NifValue::tFilePath:
-		{
-			if ( /*???*/ false ) {
-				QSpinBox * ie = new UIntSpinBox( this );
-				ie->setFrame( false );
-				ie->setValue( v.toCount( nullptr, nullptr ) );
-				edit = ie;
-			} else {
-				QLineEdit * le = new QLineEdit( this );
-				le->setText( v.toString() );
-				edit = le;
-			}
 		}
 		break;
 	default:

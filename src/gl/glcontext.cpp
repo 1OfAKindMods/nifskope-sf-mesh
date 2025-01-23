@@ -236,7 +236,7 @@ void NifSkopeOpenGLContext::ConditionGroup::addCondition( Condition * c )
 }
 
 NifSkopeOpenGLContext::Shader::Shader( const std::string_view & n, unsigned int t, GLFunctions * fn )
-	: f( fn ), name( n ), id( 0 ), status( false ), isProgram( !t ), maxNumBones( 100 )
+	: f( fn ), name( n ), id( 0 ), status( false ), isProgram( !t )
 {
 	if ( t )
 		id = f->glCreateShader( t );
@@ -340,11 +340,10 @@ bool NifSkopeOpenGLContext::Shader::load( const QString & filepath )
 	{
 		QByteArray	data = loadShaderFile( filepath );
 
-		QLatin1StringView	macroName( name.ends_with( "vert" ) ? "MAX_NUM_BONES" : "NUM_TEXTURE_UNITS" );
-		int	macroValue = ( name.ends_with( "vert" ) ? int( maxNumBones ) : TexCache::num_texture_units - 2 );
-		qsizetype	n = data.indexOf( macroName );
-		if ( n >= 0 )
-			data.replace( n, macroName.length(), QByteArray::number( macroValue ) );
+		if ( name.ends_with( "frag" ) ) {
+			if ( qsizetype n = data.indexOf( QLatin1StringView("NUM_TEXTURE_UNITS") ); n >= 0 )
+				data.replace( n, 17, QByteArray::number( TexCache::num_texture_units - 2 ) );
+		}
 
 		const char * src = data.constData();
 
@@ -501,6 +500,8 @@ bool NifSkopeOpenGLContext::Program::load( const QString & filepath, NifSkopeOpe
 				id = 0;
 				throw errlog;
 			}
+		} else if ( unsigned int l = f->glGetUniformBlockIndex( id, "globalUniforms" ); l != GL_INVALID_INDEX ) {
+			f->glBindBufferBase( GL_UNIFORM_BUFFER, l, context->globalUniformsBufferObject );
 		}
 	}
 	catch ( QString & x )
@@ -771,10 +772,7 @@ bool NifSkopeOpenGLContext::Program::uniSampler( BSShaderLightingProperty * bspr
 
 
 NifSkopeOpenGLContext::NifSkopeOpenGLContext( QOpenGLContext * context )
-	:	fn( QOpenGLVersionFunctionsFactory::get< NifSkopeOpenGLContext::GLFunctions >( context ) ), cx( context ),
-		lightSourcePosition{ FloatVector4( 0.0f, 0.0f, 1.0f, 0.0f ), FloatVector4( 0.0f ), FloatVector4( 0.0f ) },
-		lightSourceDiffuse{ FloatVector4( 1.0f ), FloatVector4( 0.0f ), FloatVector4( 0.0f ) },
-		lightSourceAmbient( 1.0f )
+	:	fn( QOpenGLVersionFunctionsFactory::get< NifSkopeOpenGLContext::GLFunctions >( context ) ), cx( context )
 {
 	vertexAttrib1f = reinterpret_cast< void (*)( unsigned int, float ) >( cx->getProcAddress( "glVertexAttrib1f" ) );
 	vertexAttrib2fv =
@@ -786,6 +784,18 @@ NifSkopeOpenGLContext::NifSkopeOpenGLContext( QOpenGLContext * context )
 	if ( !( fn && vertexAttrib1f && vertexAttrib2fv && vertexAttrib3fv && vertexAttrib4fv ) )
 		throw NifSkopeError( "failed to initialize OpenGL functions" );
 	rehashShaders();
+
+	globalUniforms = new GlobalUniforms;
+	std::memset( &( globalUniforms->viewMatrix[0][0] ), 0, sizeof( GlobalUniforms ) );
+	globalUniforms->lightSourcePosition[0][2] = 1.0f;
+	globalUniforms->lightSourceDiffuse[0] = FloatVector4( 1.0f );
+	globalUniforms->lightSourceAmbient = FloatVector4( 1.0f );
+	globalUniforms->lightingControls = FloatVector4( 1.0f );
+	fn->glGenBuffers( 1, &globalUniformsBufferObject );
+	fn->glBindBuffer( GL_UNIFORM_BUFFER, globalUniformsBufferObject );
+	fn->glBufferData( GL_UNIFORM_BUFFER, GLsizeiptr( sizeof(FloatVector4) * 768 + sizeof(GlobalUniforms) ), (void *) 0,
+						GL_DYNAMIC_DRAW );
+	fn->glBindBuffer( GL_UNIFORM_BUFFER, 0 );
 }
 
 NifSkopeOpenGLContext::~NifSkopeOpenGLContext()
@@ -801,24 +811,24 @@ NifSkopeOpenGLContext::~NifSkopeOpenGLContext()
 		else
 			delete s;
 	}
+	fn->glDeleteBuffers( 1, &globalUniformsBufferObject );
+	delete globalUniforms;
 }
 
 void NifSkopeOpenGLContext::setViewport( int x, int y, int width, int height )
 {
-	lightSourcePosition[1][3] = float( x );
-	lightSourcePosition[2][3] = float( y );
-	lightSourceDiffuse[1][3] = float( width );
-	lightSourceDiffuse[2][3] = float( height );
+	globalUniforms->viewportDimensions[0] = x;
+	globalUniforms->viewportDimensions[1] = y;
+	globalUniforms->viewportDimensions[2] = width;
+	globalUniforms->viewportDimensions[3] = height;
 
 	fn->glViewport( GLint( x ), GLint( y ), GLsizei( width ), GLsizei( height ) );
 }
 
 FloatVector4 NifSkopeOpenGLContext::getViewport() const
 {
-	if ( lightSourceDiffuse[1][3] > 0.0f ) [[likely]] {
-		return FloatVector4( lightSourcePosition[1][3], lightSourcePosition[2][3],
-								lightSourceDiffuse[1][3], lightSourceDiffuse[2][3] );
-	}
+	if ( globalUniforms->viewportDimensions[2] > 0 ) [[likely]]
+		return FloatVector4::convertInt32( globalUniforms->viewportDimensions );
 
 	GLint	viewportDims[4];
 	fn->glGetIntegerv( GL_VIEWPORT, viewportDims );
@@ -901,7 +911,7 @@ void NifSkopeOpenGLContext::rehashShaders()
 	shaderHashMask = m;
 }
 
-void NifSkopeOpenGLContext::updateShaders( int maxNumBones )
+void NifSkopeOpenGLContext::updateShaders()
 {
 	releaseShaders();
 
@@ -925,7 +935,6 @@ void NifSkopeOpenGLContext::updateShaders( int maxNumBones )
 			if ( !shader )
 				continue;
 			QString	fullPath = dir.filePath( name );
-			shader->maxNumBones = std::uint16_t( maxNumBones );
 			if ( !shader->isProgram )
 				shader->load( fullPath );
 			else
@@ -978,19 +987,41 @@ void NifSkopeOpenGLContext::stopProgram()
 	fn->glUseProgram( 0 );
 }
 
+void NifSkopeOpenGLContext::setViewTransform( const Transform & t, int upAxis, float envMapRotation )
+{
+	const float *	r = t.rotation.data();
+	globalUniforms->viewMatrix[0] = FloatVector4( r[0], r[3], r[6], 0.0f );
+	globalUniforms->viewMatrix[1] = FloatVector4( r[1], r[4], r[7], 0.0f );
+	globalUniforms->viewMatrix[2] = FloatVector4( r[2], r[5], r[8], 0.0f );
+
+	FloatVector4	m[3];
+	m[0] = FloatVector4::convertVector3( r );
+	m[1] = FloatVector4::convertVector3( r + 3 );
+	m[2] = FloatVector4::convertVector3( r + 6 );
+	if ( upAxis == 0 ) {
+		m[0].shuffleValues( 0xC9 );		// up axis = X: XYZ -> YZX
+		m[1].shuffleValues( 0xC9 );
+		m[2].shuffleValues( 0xC9 );
+	} else if ( upAxis == 1 ) {
+		m[0].shuffleValues( 0xD2 );		// up axis = Y: XYZ -> ZXY
+		m[1].shuffleValues( 0xD2 );
+		m[2].shuffleValues( 0xD2 );
+	}
+	float	r_c = float( std::cos( envMapRotation * float( 3.1415926536 / 180.0 ) ) );
+	float	r_s = float( std::sin( envMapRotation * float( 3.1415926536 / 180.0 ) ) );
+	m[0] = FloatVector4( m[0][0] * r_c - m[0][1] * r_s, m[0][0] * r_s + m[0][1] * r_c, m[0][2], m[0][3] );
+	m[1] = FloatVector4( m[1][0] * r_c - m[1][1] * r_s, m[1][0] * r_s + m[1][1] * r_c, m[1][2], m[1][3] );
+	m[2] = FloatVector4( m[2][0] * r_c - m[2][1] * r_s, m[2][0] * r_s + m[2][1] * r_c, m[2][2], m[2][3] );
+	globalUniforms->envMapRotation[0] = m[0];
+	globalUniforms->envMapRotation[1] = m[1];
+	globalUniforms->envMapRotation[2] = m[2];
+}
+
 void NifSkopeOpenGLContext::setGlobalUniforms()
 {
-	for ( Program * p = programsLinked; p; p = p->nextProgram ) {
-		fn->glUseProgram( p->id );
-		currentProgram = p;
-		p->uni3m( "viewMatrix", viewMatrix );
-		p->uni4m( "projectionMatrix", projectionMatrix );
-		p->uni4fv( "lightSourcePosition", lightSourcePosition, 3 );
-		p->uni4fv( "lightSourceDiffuse", lightSourceDiffuse, 3 );
-		p->uni4f( "lightSourceAmbient", lightSourceAmbient );
-	}
-	currentProgram = nullptr;
-	fn->glUseProgram( 0 );
+	fn->glBindBuffer( GL_UNIFORM_BUFFER, globalUniformsBufferObject );
+	fn->glBufferSubData( GL_UNIFORM_BUFFER, 0, GLsizeiptr( sizeof(GlobalUniforms) ), globalUniforms );
+	fn->glBindBuffer( GL_UNIFORM_BUFFER, 0 );
 }
 
 void NifSkopeOpenGLContext::setDefaultVertexAttribs( std::uint64_t attrMask, const float * const * attrData )
@@ -1009,6 +1040,17 @@ void NifSkopeOpenGLContext::setDefaultVertexAttribs( std::uint64_t attrMask, con
 		else
 			vertexAttrib1f( GLuint( i ), attrData[i][0] );
 	}
+}
+
+void NifSkopeOpenGLContext::updateBoneTransforms( const FloatVector4 * boneTransforms, size_t numBones )
+{
+	if ( numBones < 1 )
+		return;
+	numBones = std::min< size_t >( numBones, 256 );
+	fn->glBindBuffer( GL_UNIFORM_BUFFER, globalUniformsBufferObject );
+	fn->glBufferSubData( GL_UNIFORM_BUFFER, GLintptr( sizeof(GlobalUniforms) ),
+							GLsizeiptr( numBones * sizeof(FloatVector4) * 3 ), boneTransforms );
+	fn->glBindBuffer( GL_UNIFORM_BUFFER, 0 );
 }
 
 void NifSkopeOpenGLContext::bindShape(

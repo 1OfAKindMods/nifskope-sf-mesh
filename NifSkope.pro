@@ -154,8 +154,6 @@ HEADERS += \
 	src/data/nifitem.h \
 	src/data/niftypes.h \
 	src/data/nifvalue.h \
-	src/gl/marker/constraints.h \
-	src/gl/marker/furniture.h \
 	src/gl/BSMesh.h \
 	src/gl/bsshape.h \
 	src/gl/controllers.h \

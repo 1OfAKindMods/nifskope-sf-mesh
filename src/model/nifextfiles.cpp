@@ -235,7 +235,7 @@ void NifModel::loadSFMaterial( const QModelIndex & parent, const void * matPtr, 
 	}
 	if ( !m )
 		return;
-	for ( auto c : m->childIter() )
+	for ( auto c : m->children() )
 		c->invalidateCondition();
 
 	const CE2Material *	material = reinterpret_cast< const CE2Material * >( matPtr );
@@ -539,7 +539,7 @@ void NifModel::loadFO76Material( const QModelIndex & parent, const void * materi
 		p = getItem( p, "Material" );
 	if ( !p || !material )
 		return;
-	for ( auto c : p->childIter() )
+	for ( auto c : p->children() )
 		c->invalidateCondition();
 
 	const Material &	mat = *( static_cast< const Material * >( material ) );

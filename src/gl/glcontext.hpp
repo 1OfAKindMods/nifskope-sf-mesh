@@ -127,7 +127,6 @@ public:
 		unsigned int id;
 		bool status;
 		bool isProgram;
-		std::uint16_t maxNumBones;
 	};
 
 public:
@@ -281,6 +280,21 @@ public:
 		~ShapeData();
 	};
 
+	struct GlobalUniforms {
+		FloatVector4	viewMatrix[3];			// 3x3 rotation matrix in column-major order
+		FloatVector4	envMapRotation[3];		// view space to environment map
+		FloatVector4	projectionMatrix[4];
+		FloatVector4	lightSourcePosition[3];
+		FloatVector4	lightSourceDiffuse[3];
+		FloatVector4	lightSourceAmbient;
+		// X = tone mapping control (1.0 = full tone mapping), Y = overall brightness, Z = glow scale
+		FloatVector4	lightingControls;
+		std::int32_t	viewportDimensions[4];	// X, Y, width, height
+		// skinning enabled, scene flags, cube map background mip level, Starfield POM steps
+		std::int32_t	renderOptions1[4];
+		FloatVector4	renderOptions2;			// Starfield POM scale, offset
+	};
+
 	//! Context Functions
 	GLFunctions *	fn;
 	//! Context
@@ -292,15 +306,8 @@ public:
 	void ( *vertexAttrib3fv )( unsigned int index, const float * v );
 	void ( *vertexAttrib4fv )( unsigned int index, const float * v );
 
-	//! Global uniforms
-	Matrix	viewMatrix;
-	Matrix4	projectionMatrix;
-	// W0 = environment map rotation (-1.0 to 1.0), W1 = viewport X, W2 = viewport Y
-	FloatVector4	lightSourcePosition[3];
-	// A0 = overall brightness, A1 = viewport width, A2 = viewport height
-	FloatVector4	lightSourceDiffuse[3];
-	// A = tone mapping control (1.0 = full tone mapping)
-	FloatVector4	lightSourceAmbient;
+	GlobalUniforms *	globalUniforms;
+	unsigned int	globalUniformsBufferObject;
 
 	NifSkopeOpenGLContext( QOpenGLContext * context );
 	~NifSkopeOpenGLContext();
@@ -311,7 +318,7 @@ public:
 	FloatVector4 getViewport() const;
 
 	//! Updates shaders
-	void updateShaders( int maxNumBones = 100 );
+	void updateShaders();
 	//! Releases shaders
 	void releaseShaders();
 	//! Select shader program to use
@@ -324,8 +331,14 @@ public:
 		return currentProgram;
 	}
 
+	void setViewTransform( const Transform & t, int upAxis, float envMapRotation );
+	inline void setProjectionMatrix( const Matrix4 & m )
+	{
+		std::memcpy( &( globalUniforms->projectionMatrix[0][0] ), m.data(), sizeof( FloatVector4 ) * 4 );
+	}
 	void setGlobalUniforms();
 	void setDefaultVertexAttribs( std::uint64_t attrMask, const float * const * attrData );
+	void updateBoneTransforms( const FloatVector4 * boneTransforms, size_t numBones );
 
 	//! Load and bind geometry data without drawing the shape
 	void bindShape( unsigned int numVerts, std::uint64_t attrMask, size_t elementDataSize,

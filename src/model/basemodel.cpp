@@ -598,9 +598,10 @@ void BaseModel::refreshFileInfo( const QString & f )
 
 const NifItem * BaseModel::getItemInternal( const NifItem * parent, const QString & name, bool reportErrors ) const
 {
-	for ( auto item : parent->childIter() )
+	for ( auto item : parent->children() ) {
 		if ( item->hasName(name) && evalCondition(item) )
 			return item;
+	}
 
 	if ( reportErrors )
 		reportError( parent, tr( "Could not find \"%1\" subitem." ).arg( name ) );
@@ -609,9 +610,10 @@ const NifItem * BaseModel::getItemInternal( const NifItem * parent, const QStrin
 
 const NifItem * BaseModel::getItemInternal( const NifItem * parent, const QLatin1StringView & name, bool reportErrors ) const
 {
-	for ( auto item : parent->childIter() )
+	for ( auto item : parent->children() ) {
 		if ( item->hasName(name) && evalCondition(item) )
 			return item;
+	}
 
 	if ( reportErrors )
 		reportError( parent, tr( "Could not find \"%1\" subitem." ).arg( QString(name) ) );
@@ -882,8 +884,8 @@ void BaseModel::onArrayValuesChange( NifItem * arrayRootItem )
 	int x = arrayRootItem->childCount() - 1;
 	if ( x >= 0 ) {
 		emit dataChanged(
-			createIndex( 0, ValueCol, arrayRootItem->children().at(0) ),
-			createIndex( x, ValueCol, arrayRootItem->children().at(x) )
+			createIndex( 0, ValueCol, arrayRootItem->children()[0] ),
+			createIndex( x, ValueCol, arrayRootItem->children()[x] )
 		);
 	}
 }

@@ -545,7 +545,7 @@ void NifModel::updateHeader()
 			int nMaxLen = 0;
 			auto headerStrings = getItem( header, "Strings" );
 			if ( headerStrings ) {
-				for ( auto c : headerStrings->childIter() ) {
+				for ( auto c : headerStrings->children() ) {
 					int len = c->get<QString>().length();
 					if ( len > nMaxLen )
 						nMaxLen = len;
@@ -623,10 +623,15 @@ bool NifModel::updateArraySizeImpl( NifItem * array )
 	bool bOldHasChildLinks = array->hasChildLinks();
 
 	if ( nNewSize > nOldSize ) { // Add missing items
+		auto	valueType = NifValue::type( array->strType() );
+		if ( valueType == NifValue::tStringIndex && version < 0x14010003 ) [[unlikely]] {
+			if ( array->hasStrType( "string" ) || array->hasStrType( "FilePath" ) )
+				valueType = NifValue::tSizedString;
+		}
 		NifData data( array->name(),
 					  array->strType(),
 					  array->templ(),
-					  NifValue( NifValue::type( array->strType() ) ),
+					  NifValue( valueType ),
 					  addConditionParentPrefix( array->arg() ),
 					  addConditionParentPrefix( array->arr2() ) // arr1 in children is parent arr2
 		);
@@ -730,7 +735,7 @@ bool NifModel::updateChildArraySizes( NifItem * parent )
 	if ( !parent )
 		return false;
 
-	for ( auto child : parent->childIter() ) {
+	for ( auto child : parent->children() ) {
 		if ( evalCondition( child ) ) {
 			if ( child->isArray() ) {
 				if ( !updateArraySize(child) )
@@ -853,14 +858,19 @@ void NifModel::updateStrings( NifModel * src, NifModel * tgt, NifItem * item )
 	if ( !item )
 		return;
 
-	if ( item->hasValueType(NifValue::tStringIndex) || item->hasValueType(NifValue::tSizedString) || item->hasStrType("string") ) {
-		QString str = src->resolveString( item );
-		tgt->assignString( tgt->createIndex( 0, 0, item ), str, false );
+	if ( item->valueType() == NifValue::tStringIndex || item->valueType() == NifValue::tSizedString ) {
+		if ( item->hasStrType( "string" ) || item->hasStrType( "FilePath" ) ) {
+			QString str = src->resolveString( item );
+			NifItem *	newItem = tgt->getItem( tgt->createIndex( 0, 0, item ) );
+			if ( newItem ) {
+				newItem->changeValueType( tgt->version < 0x14010003 ? NifValue::tSizedString : NifValue::tStringIndex );
+				tgt->assignString( newItem, str, false );
+			}
+		}
 	}
 
-	for ( auto child : item->children() ) {
+	for ( auto child : item->children() )
 		updateStrings( src, tgt, child );
-	}
 }
 
 QMap<qint32, qint32> NifModel::moveAllNiBlocks( NifModel * targetnif, bool update )
@@ -1179,8 +1189,8 @@ void NifModel::insertType( NifItem * parent, const NifData & data, int at )
 		NifData d( data );
 
 		if ( d.type() == XMLTMPL ) {
-			d.value.changeType( NifValue::type( tmp ) );
-			d.setType( tmp );
+			d.changeType( NifValue::type( tmp ) );
+			d.setStrType( tmp );
 			// The templates are now filled
 			d.setTemplated( false );
 		}
@@ -1190,12 +1200,15 @@ void NifModel::insertType( NifItem * parent, const NifData & data, int at )
 
 		insertType( parent, d, at );
 	} else {
-		if ( data.valueType() == NifValue::tString || data.valueType() == NifValue::tFilePath )
-			// Kludge for string conversion.
-			//  Ensure that the string type is correct for the nif version
-			parent->insertChild( data, version < 0x14010003 ? NifValue::tSizedString : NifValue::tStringIndex, at);
-		else
-			parent->insertChild( data, at );
+		if ( data.valueType() == NifValue::tStringIndex && version < 0x14010003 ) [[unlikely]] {
+			// change string type for NIF versions older than 20.1.0.3
+			if ( data.hasStrType( "string" ) || data.hasStrType( "FilePath" ) ) {
+				parent->insertChild( data, NifValue::tSizedString, at );
+				restoreState();
+				return;
+			}
+		}
+		parent->insertChild( data, at );
 	}
 
 	restoreState();
@@ -1273,10 +1286,7 @@ QVariant NifModel::data( const QModelIndex & index, int role ) const
 				{
 					auto vt = item->valueType();
 
-					if ( vt == NifValue::tString || vt == NifValue::tFilePath ) {
-						return QString( resolveString( item ) ).replace( "\n", SPACE_QSTRING ).replace( "\r", SPACE_QSTRING );
-
-					} else if ( vt == NifValue::tStringOffset ) {
+					if ( vt == NifValue::tStringOffset ) {
 						int offset = item->get<int>();
 						if ( offset < 0 || offset == 0x0000FFFF )
 							return tr( "<empty>" );
@@ -1397,11 +1407,7 @@ QVariant NifModel::data( const QModelIndex & index, int role ) const
 			case TypeCol:
 				return item->strType();
 			case ValueCol:
-				{
-					if ( item->hasValueType(NifValue::tString) || item->hasValueType(NifValue::tFilePath) )
-						return resolveString( item );
-					return item->getValueAsVariant();
-				}
+				return item->getValueAsVariant();
 			case ArgCol:
 				return item->arg();
 			case Arr1Col:
@@ -1592,14 +1598,7 @@ bool NifModel::setData( const QModelIndex & index, const QVariant & value, int r
 		item->setStrType( value.toString() );
 		break;
 	case NifModel::ValueCol:
-		{
-			if ( item->hasValueType(NifValue::tString) || item->hasValueType(NifValue::tFilePath) ) {
-				item->changeValueType( version < 0x14010003 ? NifValue::tSizedString : NifValue::tStringIndex );
-				assignString( item, value.toString(), true );
-			} else {
-				item->setValueFromVariant( value );
-			}
-		}
+		item->setValueFromVariant( value );
 		break;
 	case NifModel::ArgCol:
 		item->setArg( value.toString() );
@@ -2313,7 +2312,7 @@ int NifModel::blockSize( const NifItem * item, NifSStream & stream ) const
 	QString name;
 
 	int size = 0;
-	for ( auto child : item->childIter() ) {
+	for ( auto child : item->children() ) {
 		if ( child->isAbstract() ) {
 			//qDebug() << "Not counting abstract item " << child->name();
 			continue;
@@ -2350,7 +2349,7 @@ bool NifModel::loadItem( NifItem * parent, NifIStream & stream )
 
 	QString name;
 
-	for ( auto child : parent->childIter() ) {
+	for ( auto child : parent->children() ) {
 		child->invalidateCondition();
 
 		if ( child->isAbstract() ) {
@@ -2396,12 +2395,12 @@ bool NifModel::loadHeader( NifItem * header, NifIStream & stream )
 	// assuming that there could be muliple children with those names (who knows what will happen to nif.xml).
 	bool bFoundUserVersion = false;
 	bool bFoundBSVersion = false;
-	for ( auto child : header->childIter() ) {
+	for ( auto child : header->children() ) {
 		if ( child->hasName("User Version") ) {
 			child->set<int>( 0 );
 			bFoundUserVersion = true;
 		} else if ( child->hasName("BS Header") ) {
-			for ( auto subChild : child->childIter() ) {
+			for ( auto subChild : child->children() ) {
 				if ( subChild->hasName("BS Version") ) {
 					subChild->set<int>( 0 );
 					bFoundBSVersion = true;
@@ -2428,7 +2427,7 @@ bool NifModel::saveItem( const NifItem * parent, NifOStream & stream ) const
 
 	QString name;
 
-	for ( auto child : parent->childIter() ) {
+	for ( auto child : parent->children() ) {
 		if ( child->isAbstract() ) {
 			// qDebug() << "Not saving abstract item " << child->name();
 			continue;
@@ -2466,7 +2465,7 @@ bool NifModel::fileOffset( const NifItem * parent, const NifItem * target, NifSS
 	if ( parent == target )
 		return true;
 
-	for ( auto child : parent->childIter() ) {
+	for ( auto child : parent->children() ) {
 		if ( child == target )
 			return true;
 
@@ -2657,13 +2656,12 @@ void NifModel::updateLinks( int block, NifItem * parent )
 	if ( !parent )
 		return;
 
-	auto links = parent->getLinkRows();
-	for ( int l : links ) {
+	for ( int l : parent->getLinkRows() ) {
 		NifItem * c = parent->child( l );
 		if ( !c )
 			continue;
 
-		if ( c->childCount() > 0 ) {
+		if ( c->hasChildLinks() ) {
 			updateLinks( block, c );
 			continue;
 		}
@@ -2675,13 +2673,6 @@ void NifModel::updateLinks( int block, NifItem * parent )
 			else
 				insertLink( childLinks[block], i );
 		}
-	}
-
-	auto linkparents = parent->getLinkAncestorRows();
-	for ( int p : linkparents ) {
-		NifItem * c = parent->child( p );
-		if ( c && c->childCount() > 0 )
-			updateLinks( block, c );
 	}
 }
 
@@ -2756,7 +2747,7 @@ QVector<qint32> NifModel::getLinkArray( const NifItem * arrayRootItem ) const
 		int nLinks = arrayRootItem->childCount();
 		if ( nLinks > 0 ) {
 			links.reserve( nLinks );
-			for ( auto child : arrayRootItem->childIter() )
+			for ( auto child : arrayRootItem->children() )
 				links.append( child->getLinkValue() );
 		}
 	} else {
@@ -2952,7 +2943,7 @@ bool NifModel::assignString( NifItem * item, const QString & string, bool replac
 		return BaseModel::set<QString>( itemString, string );
 
 	} else if ( item->valueType() == NifValue::tStringIndex ) {
-		NifValue v( NifValue::tString );
+		NifValue v( NifValue::tSizedString );
 		v.set<QString>( string, this, item );
 		return setItemValue( item, v );
 	}

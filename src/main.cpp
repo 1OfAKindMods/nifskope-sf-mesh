@@ -37,11 +37,13 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "model/kfmmodel.h"
 
 #include <QApplication>
+#include <QColorSpace>
 #include <QCommandLineParser>
 #include <QDesktopServices>
 #include <QDir>
 #include <QSettings>
 #include <QStack>
+#include <QSurfaceFormat>
 #include <QUdpSocket>
 #include <QUrl>
 
@@ -51,6 +53,10 @@ QCoreApplication * createApplication( int &argc, char *argv[] )
 	QCoreApplication::setAttribute( Qt::AA_UseDesktopOpenGL );
 	QCoreApplication::setAttribute( Qt::AA_ShareOpenGLContexts );
 	QGuiApplication::setHighDpiScaleFactorRoundingPolicy( Qt::HighDpiScaleFactorRoundingPolicy::PassThrough );
+	if ( auto fmt = QSurfaceFormat::defaultFormat(); true ) {
+		fmt.setColorSpace( QColorSpace( QColorSpace::SRgb ) );
+		QSurfaceFormat::setDefaultFormat( fmt );
+	}
 
 	// Iterate over args
 	for ( int i = 1; i < argc; ++i ) {

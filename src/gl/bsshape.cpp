@@ -149,8 +149,6 @@ void BSShape::updateData( const NifModel * nif )
 	resetSkeletonData();
 	if ( isSkinned && iSkin.isValid() ) {
 		skeletonRoot = nif->getLink( iSkin, "Skeleton Root" );
-		if ( nif->getBSVersion() < 130 )
-			skeletonTrans = Transform( nif, iSkinData );
 
 		bones = nif->getLinkArray( iSkin, "Bones" );
 		auto nTotalBones = bones.size();
@@ -159,7 +157,7 @@ void BSShape::updateData( const NifModel * nif )
 		for ( int i = 0; i < nTotalBones; i++ )
 			boneData[i].bone = bones[i];
 
-		boneWeights0.fill( FloatVector4( 0.0f ), numVerts );
+		boneWeights0.assign( size_t( numVerts ), FloatVector4( 0.0f ) );
 		boneWeights1.clear();
 
 		for ( int i = 0; i < numVerts; i++ ) {
@@ -171,7 +169,7 @@ void BSShape::updateData( const NifModel * nif )
 
 			size_t	k = 0;
 			for ( int j = 0; j < 4; j++ ) {
-				if ( bns[j] < nTotalBones && wts[j] > 0.0f ) {
+				if ( bns[j] < nTotalBones && wts[j] > 0.00001f ) {
 					boneWeights0[i][k] = float( bns[j] ) + ( std::min( wts[j], 1.0f ) * float( 65535.0 / 65536.0 ) );
 					k++;
 				}

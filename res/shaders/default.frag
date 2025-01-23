@@ -35,6 +35,7 @@ in vec2 texCoords[9];
 in vec4 A;
 in vec4 C;
 in vec4 D;
+in float glowScale;
 
 in vec3 N;
 
@@ -79,7 +80,7 @@ void main()
 	vec3 emissive = frontMaterialEmission.rgb * frontMaterialEmission.a;
 	if ( ( vertexColorFlags & 0x10 ) != 0 )
 		emissive = C.rgb * C.a;
-	color.rgb += emissive;
+	color.rgb += emissive * glowScale;
 
 	color.a *= alpha;
 
@@ -119,7 +120,7 @@ void main()
 	}
 	if ( textures[4].textureUnit > 0 ) {
 		// glow
-		color.rgb += getTexture( 4 ).rgb;
+		color.rgb += getTexture( 4 ).rgb * glowScale;
 	}
 
 	// Specular

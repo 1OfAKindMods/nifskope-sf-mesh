@@ -9,12 +9,10 @@ out vec3 N;
 
 out vec4 C;
 
-uniform mat3 normalMatrix;
+#include "uniforms.glsl"
+
+uniform mat3 normalMatrix;			// in row-major order
 uniform mat4 modelViewMatrix;
-uniform mat4 projectionMatrix;
-uniform vec4 lightSourcePosition[3];	// W0 = environment map rotation (-1.0 to 1.0), W1, W2 = viewport X, Y
-uniform vec4 lightSourceDiffuse[3];		// A0 = overall brightness, A1, A2 = viewport width, height
-uniform vec4 lightSourceAmbient;		// A = tone mapping control (1.0 = full tone mapping)
 
 uniform vec4 vertexColorOverride;	// components greater than zero replace the vertex color
 
@@ -31,7 +29,7 @@ void main()
 	vec4	v = vec4( vertexPosition, 1.0 );
 	vec3	n = normalVector;
 
-	if ( numBones > 0 )
+	if ( boneWeights[0] > 0.0 && renderOptions1.x != 0 )
 		boneTransform( v, n );
 
 	v = modelViewMatrix * v;

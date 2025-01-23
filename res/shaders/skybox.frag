@@ -1,5 +1,7 @@
 #version 410 core
 
+#include "uniforms.glsl"
+
 uniform samplerCube	CubeMap;
 uniform bool	hasCubeMap;
 uniform int	skyCubeMipLevel;
@@ -7,10 +9,7 @@ uniform int	skyCubeMipLevel;
 in vec3 LightDir;
 in vec3 ViewDir;
 
-in vec4 A;
-in vec4 D;
-
-in mat3 reflMatrix;
+flat in mat3 reflMatrix;
 
 out vec4 fragColor;
 
@@ -50,17 +49,17 @@ void main()
 
 	vec3	viewWS = reflMatrix * V;
 
-	float	m = clamp( float(skyCubeMipLevel), 0.0, 6.0 );
+	float	m = clamp( float(renderOptions1.z), 0.0, 6.0 );
 	float	roughness = ( 5.0 - sqrt( 25.0 - 4.0 * m ) ) / 4.0;
-	vec3	color = D.rgb * LightingFuncGGX_REF( VdotL, max(roughness, 0.02) ) * VdotL0;
+	vec3	color = lightSourceDiffuse[0].rgb * LightingFuncGGX_REF( VdotL, max(roughness, 0.02) ) * VdotL0;
 
 	// Environment
-	vec3	ambient = A.rgb;
+	vec3	ambient = lightSourceAmbient.rgb;
 	if ( hasCubeMap ) {
 		color += textureLod( CubeMap, viewWS, m ).rgb * ambient;
 	} else {
 		color += ambient * 0.08;
 	}
 
-	fragColor = vec4( tonemap( color * D.a, A.a ), 0.0 );
+	fragColor = vec4( tonemap( color * lightingControls.y, lightingControls.x ), 0.0 );
 }

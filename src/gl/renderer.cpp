@@ -88,12 +88,13 @@ void Renderer::updateSettings()
 	QSettings settings;
 
 	int	tmp = settings.value( "Settings/Render/General/Mesh Cache Size", 128 ).toInt();
-	cfg.meshCacheSize = std::uint8_t( std::min< int >( std::max< int >( ( tmp + 4 ) >> 3, 1 ), 128 ) );
+	cfg.meshCacheSize = std::uint8_t( std::clamp< int >( ( tmp + 4 ) >> 3, 1, 128 ) );
 	tmp = settings.value( "Settings/Render/General/Cube Map Bgnd", 1 ).toInt();
-	cfg.cubeBgndMipLevel = std::int8_t( std::min< int >( std::max< int >( tmp, -1 ), 6 ) );
-	cfg.sfParallaxMaxSteps = short( settings.value( "Settings/Render/General/Sf Parallax Steps", 200 ).toInt() );
-	cfg.sfParallaxScale = settings.value( "Settings/Render/General/Sf Parallax Scale", 0.0f).toFloat();
-	cfg.sfParallaxOffset = settings.value( "Settings/Render/General/Sf Parallax Offset", 0.5f).toFloat();
+	globalUniforms->renderOptions1[2] = std::clamp< int >( tmp, -1, 6 );
+	tmp = settings.value( "Settings/Render/General/Sf Parallax Steps", 200 ).toInt();
+	globalUniforms->renderOptions1[3] = std::clamp< int >( tmp, 16, 512 );
+	globalUniforms->renderOptions2[0] = settings.value( "Settings/Render/General/Sf Parallax Scale", 0.0f).toFloat();
+	globalUniforms->renderOptions2[1] = settings.value( "Settings/Render/General/Sf Parallax Offset", 0.5f).toFloat();
 	cfg.cubeMapPathFO76 = settings.value( "Settings/Render/General/Cube Map Path FO 76", "textures/shared/cubemaps/mipblur_defaultoutside1.dds" ).toString();
 	cfg.cubeMapPathSTF = settings.value( "Settings/Render/General/Cube Map Path STF", "textures/cubemaps/cell_cityplazacube.dds" ).toString();
 	setCacheSize( std::uint32_t( cfg.meshCacheSize ) << 23 );
@@ -255,7 +256,6 @@ bool Renderer::setupProgramCE2( const NifModel * nif, Program * prog, Shape * me
 
 	prog->uni1i( "hasSpecular", int(scene->hasOption(Scene::DoSpecular)) );
 	prog->uni1i( "lm.shaderModel", mat->shaderModel );
-	prog->uni4f( "parallaxOcclusionSettings", FloatVector4( 8.0f, float(cfg.sfParallaxMaxSteps), cfg.sfParallaxScale, cfg.sfParallaxOffset ) );
 
 	// emissive settings
 	if ( mat->flags & CE2Material::Flag_LayeredEmissivity && scene->hasOption(Scene::DoGlow) ) {
@@ -1334,8 +1334,8 @@ void Renderer::drawSkyBox( Scene * scene )
 		-10.0f, -10.0f,  10.0f,   10.0f, -10.0f,  10.0f,  -10.0f,  10.0f,  10.0f,   10.0f,  10.0f,  10.0f
 	};
 
-	if ( cfg.cubeBgndMipLevel < 0 || !scene->nifModel || scene->nifModel->getBSVersion() < 151 || scene->selecting
-		|| scene->hasVisMode( Scene::VisSilhouette ) ) {
+	if ( globalUniforms->renderOptions1[2] < 0 || !scene->nifModel || scene->nifModel->getBSVersion() < 151
+		|| scene->selecting || scene->hasVisMode( Scene::VisSilhouette ) ) {
 		return;
 	}
 
@@ -1372,7 +1372,6 @@ void Renderer::drawSkyBox( Scene * scene )
 
 	prog->uni1i( "hasCubeMap", hasCubeMap );
 	prog->uni1b( "invertZAxis", ( bsVersion < 170 ) );
-	prog->uni1i( "skyCubeMipLevel", cfg.cubeBgndMipLevel );
 
 	glDisable( GL_BLEND );
 	glEnable( GL_DEPTH_TEST );

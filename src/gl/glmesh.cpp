@@ -67,6 +67,19 @@ void Mesh::updateImpl( const NifModel * nif, const QModelIndex & index )
 	}
 }
 
+void Mesh::addBoneWeight( int vertexNum, int boneNum, float weight )
+{
+	FloatVector4 *	w = boneWeights0.data() + vertexNum;
+	if ( (*w)[3] > 0.0f ) [[unlikely]] {
+		size_t	numVerts = size_t( verts.size() );
+		if ( boneWeights1.size() < numVerts ) [[unlikely]]
+			boneWeights1.assign( numVerts, FloatVector4( 0.0f ) );
+		w = boneWeights1.data() + vertexNum;
+	}
+	w->shuffleValues( 0x93 );	// 3, 0, 1, 2
+	(*w)[0] = float( boneNum ) + ( std::min( weight, 1.0f ) * float( 65535.0 / 65536.0 ) );
+}
+
 void Mesh::updateData( const NifModel * nif )
 {
 	resetSkinning();
@@ -89,8 +102,10 @@ void Mesh::updateData( const NifModel * nif )
 			iSkinPart = nif->getBlockIndex( nif->getLink( iSkinData, "Skin Partition" ), "NiSkinPartition" );
 		}
 
+		qsizetype	numVerts = verts.size();
+		boneWeights0.assign( size_t( numVerts ), FloatVector4( 0.0f ) );
+
 		skeletonRoot = nif->getLink( iSkin, "Skeleton Root" );
-		skeletonTrans = Transform( nif, iSkinData );
 
 		bones = nif->getLinkArray( iSkin, "Bones" );
 
@@ -98,23 +113,50 @@ void Mesh::updateData( const NifModel * nif )
 		if ( idxBones.isValid() ) {
 			int nTotalBones = bones.size();
 			int nBoneList = nif->rowCount( idxBones );
-#if 0
-			// TODO: Ignore weights listed in NiSkinData if NiSkinPartition exists
-			int vcnt = ( !iSkinPart.isValid() ? numVerts : 0 );
-#endif
-			for ( int b = 0; b < nBoneList && b < nTotalBones; b++ )
+
+			for ( int b = 0; b < nBoneList && b < nTotalBones; b++ ) {
 				boneData.append( BoneData( nif, nif->getIndex( idxBones, b ), bones[b] ) );
+
+				// Ignore weights listed in NiSkinData if NiSkinPartition exists
+				if ( !iSkinPart.isValid() ) {
+					QModelIndex idxWeights = nif->getIndex( nif->getIndex( idxBones, b ), "Vertex Weights" );
+					if ( idxWeights.isValid() ) {
+						for ( int c = 0; c < nif->rowCount( idxWeights ); c++ ) {
+							QModelIndex idx = nif->getIndex( idxWeights, c );
+							int i = nif->get<int>( idx, "Index" );
+							float w = nif->get<float>( idx, "Weight" );
+							if ( (unsigned int) i < (unsigned int) numVerts && b < 256 && w > 0.00001f )
+								addBoneWeight( i, b, w );
+						}
+					}
+				}
+			}
 		}
 
 		if ( iSkinPart.isValid() ) {
 			QModelIndex idx = nif->getIndex( iSkinPart, "Partitions" );
 
+			qsizetype	numBones = std::min< qsizetype >( bones.size(), 256 );
 			uint numTris = 0;
 			uint numStrips = 0;
 			for ( int i = 0; i < nif->rowCount( idx ) && idx.isValid(); i++ ) {
 				partitions.append( SkinPartition( nif, nif->getIndex( idx, i ) ) );
-				numTris += partitions[i].triangles.size();
-				numStrips += partitions[i].tristrips.size();
+				SkinPartition &	part = partitions.last();
+				numTris += part.triangles.size();
+				numStrips += part.tristrips.size();
+
+				for ( int v = 0; v < part.vertexMap.size(); v++ ) {
+					int	vindex = part.vertexMap[v];
+					if ( vindex < 0 || vindex >= numVerts )
+						break;
+
+					for ( int w = 0; w < part.numWeightsPerVertex; w++ ) {
+						auto	weight = part.weights[v * part.numWeightsPerVertex + w];
+						auto	b = part.boneMap.value( weight.first );
+						if ( (unsigned int) b < (unsigned int) numBones && weight.second > 0.00001f )
+							addBoneWeight( vindex, b, weight.second );
+					}
+				}
 			}
 
 			triangles.clear();
@@ -440,8 +482,8 @@ void Mesh::updateData_NiMesh( const NifModel * nif )
 	}
 
 	// Clear unused vertex attributes
-	//	Note: Do not clear normals as this breaks fixed function for some reason
-	// TODO (Gavrant): figure out why clearing normals "breaks fixed function for some reason"
+	if ( !(semFlags & NiMesh::HAS_NORMAL) )
+		norms.clear();
 	if ( !(semFlags & NiMesh::HAS_BINORMAL) )
 		bitangents.clear();
 	if ( !(semFlags & NiMesh::HAS_TANGENT) )
@@ -623,46 +665,12 @@ void Mesh::transformShapes()
 
 	Node::transformShapes();
 
-	transformRigid = true;
-
-	if ( isSkinned && ( boneData.size() || partitions.size() ) && scene->hasOption(Scene::DoSkinning) ) {
-		transformRigid = false;
-
-		Node * root = findParent( skeletonRoot );
-
-		boundSphere = BoundSphere();
-
-		if ( partitions.size() ) {
-			for ( const SkinPartition& part : partitions ) {
-				QVector<Transform> boneTrans( part.boneMap.size() );
-
-				for ( int t = 0; t < boneTrans.size(); t++ ) {
-					Node * bone = root ? root->findChild( bones.value( part.boneMap[t] ) ) : 0;
-					boneTrans[ t ] = scene->view;
-
-					if ( bone )
-						boneTrans[ t ] = boneTrans[ t ] * bone->localTrans( skeletonRoot ) * boneData.value( part.boneMap[t] ).trans;
-
-					//if ( bone ) boneTrans[ t ] = bone->viewTrans() * boneData.value( part.boneMap[t] ).trans;
-				}
-			}
-		} else {
-			int x = 0;
-			for ( const BoneData& bw : boneData ) {
-				Transform trans = viewTrans() * skeletonTrans;
-				Node * bone = root ? root->findChild( bw.bone ) : nullptr;
-
-				if ( bone ) {
-					trans = trans * bone->localTrans( skeletonRoot ) * bw.trans;
-					boneData[x].tcenter = bone->viewTrans() * bw.center;
-				}
-				x++;
-			}
-		}
-
-		boundSphere.applyInv( worldTrans() );
-		needUpdateBounds = false;
+	if ( !( isSkinned && scene->hasOption(Scene::DoSkinning) ) ) [[likely]] {
+		transformRigid = true;
+		return;
 	}
+
+	updateBoneTransforms();
 }
 
 BoundSphere Mesh::bounds() const
@@ -839,42 +847,42 @@ void Mesh::drawSelection() const
 	}
 
 	if ( n == "Points" ) {
-		// TODO: implement this
-#if 0
-		glBegin( GL_POINTS );
-		auto nif = NifModel::fromIndex( iData );
 		QModelIndex points = nif->getIndex( iData, "Points" );
 
 		if ( points.isValid() ) {
-			for ( int j = 0; j < nif->rowCount( points ); j++ ) {
-				QModelIndex iPoints = nif->getIndex( points, j );
+			scene->setGLColor( scene->wireframeColor );
+			scene->setGLPointSize( GLView::Settings::vertexPointSize );
+			setUniforms( scene->setupProgram( "selection.prog", GL_POINTS ) );
 
-				for ( int k = 0; k < nif->rowCount( iPoints ); k++ ) {
-					glVertex( verts.value( nif->get<quint16>( nif->getIndex( iPoints, k ) ) ) );
+			for ( int j = 0; j < nif->rowCount( points ) && j < tristripOffsets.size(); j++ ) {
+				QModelIndex	iPoints = nif->getIndex( points, j );
+				if ( !iPoints.isValid() )
+					continue;
+				auto	strip = tristripOffsets.at( j );
+
+				if ( j == i && nif->isArray( idx ) ) {
+					glDepthFunc( GL_ALWAYS );
+					setGLColor( scene->highlightColor );
+				} else {
+					glDepthFunc( GL_LEQUAL );
+					setGLColor( scene->wireframeColor );
+				}
+
+				glPolygonMode( GL_FRONT_AND_BACK, GL_POINT );
+				context->fn->glDrawElements( GL_TRIANGLES, GLsizei( strip.second * 3 ),
+												GL_UNSIGNED_SHORT, (void *) ( strip.first * 6 ) );
+				glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
+
+				if ( i >= 0 && i < nif->rowCount( iPoints ) && !nif->isArray( idx ) && iPoints == idx.parent() ) {
+					glDepthFunc( GL_ALWAYS );
+					setGLColor( scene->highlightColor );
+
+					qsizetype	k = nif->get<quint16>( iPoints, i );
+					if ( k < verts.size() )
+						context->fn->glDrawArrays( GL_POINTS, GLint( k ), 1 );
 				}
 			}
 		}
-
-		glEnd();
-
-		if ( i >= 0 ) {
-			glDepthFunc( GL_ALWAYS );
-			glHighlightColor();
-			glBegin( GL_POINTS );
-			QModelIndex iPoints = nif->getIndex( points, i );
-
-			if ( nif->isArray( idx ) ) {
-				for ( int j = 0; j < nif->rowCount( iPoints ); j++ ) {
-					glVertex( verts.value( nif->get<quint16>( nif->getIndex( iPoints, j ) ) ) );
-				}
-			} else {
-				iPoints = idx.parent();
-				glVertex( verts.value( nif->get<quint16>( nif->getIndex( iPoints, i ) ) ) );
-			}
-
-			glEnd();
-		}
-#endif
 	}
 
 	if ( n == "Faces" || n == "Triangles" ) {
@@ -891,47 +899,36 @@ void Mesh::drawSelection() const
 			Shape::drawTriangles( tristripOffsets[i].first, tristripOffsets[i].second, scene->highlightColor );
 	}
 
-	if ( n == "Partitions" ) {
+	if ( n == "Partitions" && !( partitions.isEmpty() || verts.isEmpty() ) ) {
+		qsizetype	k = 0;
+		qsizetype	l = 0;
 
-		for ( int c = 0; c < partitions.size(); c++ ) {
-			// TODO: implement this
-#if 0
-			if ( c == i )
-				glHighlightColor();
-			else
-				glNormalColor();
+		for ( int c = 0; c < partitions.size() && k < triangles.size(); c++ ) {
+			scene->setGLColor( c != i ? scene->wireframeColor : scene->highlightColor );
+			scene->setGLLineWidth( GLView::Settings::lineWidthWireframe );
+			setUniforms( scene->setupProgram( "wireframe.prog", GL_TRIANGLES ) );
 
-			QVector<int> vmap = partitions[c].vertexMap;
+			const auto &	part = partitions.at( c );
 
-			for ( const Triangle& tri : partitions[c].triangles ) {
-				glBegin( GL_LINE_STRIP );
-				glVertex( verts.value( vmap.value( tri.v1() ) ) );
-				glVertex( verts.value( vmap.value( tri.v2() ) ) );
-				glVertex( verts.value( vmap.value( tri.v3() ) ) );
-				glVertex( verts.value( vmap.value( tri.v1() ) ) );
-				glEnd();
+			qsizetype	triCnt = part.triangles.size();
+			triCnt = std::min< qsizetype >( triCnt, triangles.size() - k );
+			if ( triCnt > 0 ) {
+				context->fn->glDrawElements( GL_TRIANGLES, GLsizei( triCnt * 3 ),
+												GL_UNSIGNED_SHORT, (void *) ( k * 6 ) );
+				k = k + triCnt;
 			}
-			for ( const TriStrip& strip : partitions[c].tristrips ) {
-				quint16 a = vmap.value( strip.value( 0 ) );
-				quint16 b = vmap.value( strip.value( 1 ) );
 
-				for ( int v = 2; v < strip.size(); v++ ) {
-					quint16 c = vmap.value( strip[v] );
-
-					if ( a != b && b != c && c != a ) {
-						glBegin( GL_LINE_STRIP );
-						glVertex( verts.value( a ) );
-						glVertex( verts.value( b ) );
-						glVertex( verts.value( c ) );
-						glVertex( verts.value( a ) );
-						glEnd();
-					}
-
-					a = b;
-					b = c;
+			qsizetype	stripCnt = part.tristrips.size();
+			for ( qsizetype j = 0; j < stripCnt && l < tristripOffsets.size(); j++, l++ ) {
+				k = tristripOffsets.at( l ).first;
+				qsizetype	triCnt = tristripOffsets.at( l ).second;
+				triCnt = std::min< qsizetype >( triCnt, triangles.size() - k );
+				if ( triCnt > 0 ) {
+					context->fn->glDrawElements( GL_TRIANGLES, GLsizei( triCnt * 3 ),
+													GL_UNSIGNED_SHORT, (void *) ( k * 6 ) );
+					k = k + triCnt;
 				}
 			}
-#endif
 		}
 	}
 
@@ -991,4 +988,53 @@ void Mesh::updateLodLevel()
 		numTriangles = std::clamp< qsizetype >( numTriangles, 0, triangles.size() );
 	}
 	lodTriangleCount = numTriangles;
+}
+
+
+#define SEM(string) {#string, E_##string}
+
+namespace NiMesh
+{
+	const QMap<QString, Semantic> semanticStrings = {
+		// Vertex semantics
+		SEM( POSITION ),
+		SEM( NORMAL ),
+		SEM( BINORMAL ),
+		SEM( TANGENT ),
+		SEM( TEXCOORD ),
+		SEM( BLENDWEIGHT ),
+		SEM( BLENDINDICES ),
+		SEM( COLOR ),
+		SEM( PSIZE ),
+		SEM( TESSFACTOR ),
+		SEM( DEPTH ),
+		SEM( FOG ),
+		SEM( POSITIONT ),
+		SEM( SAMPLE ),
+		SEM( DATASTREAM ),
+		SEM( INDEX ),
+
+		// Skinning semantics
+		SEM( BONEMATRICES ),
+		SEM( BONE_PALETTE ),
+		SEM( UNUSED0 ),
+		SEM( POSITION_BP ),
+		SEM( NORMAL_BP ),
+		SEM( BINORMAL_BP ),
+		SEM( TANGENT_BP ),
+
+		// Morph weights semantics
+		SEM( MORPHWEIGHTS ),
+
+		// Normal sharing semantics, for use in runtime normal calculation
+		SEM( NORMALSHAREINDEX ),
+		SEM( NORMALSHAREGROUP ),
+
+		// Instancing Semantics
+		SEM( TRANSFORMS ),
+		SEM( INSTANCETRANSFORMS ),
+
+		// Display list semantics
+		SEM( DISPLAYLIST )
+	};
 }

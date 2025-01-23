@@ -148,7 +148,7 @@ bool exportCreateNodes(const NifModel* nif, const Scene* scene, tinygltf::Model&
 					if ( j )
 						gltfNode.name += ":LOD" + std::to_string(j);
 					// Skins
-					if ( mesh->skinID > -1 && mesh->weightsUNORM.size() > 0 ) {
+					if ( mesh->skinID > -1 && mesh->numWeights > 0 ) {
 						if ( !gltf.skins.values().contains(mesh) ) {
 							gltfSkinID++;
 						}

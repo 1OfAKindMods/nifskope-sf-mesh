@@ -8,16 +8,14 @@ out vec2 texCoord;
 out vec4 A;
 out vec4 C;
 out vec4 D;
+out float glowScale;
 
 out mat3 reflMatrix;
 
-uniform mat3 viewMatrix;
-uniform mat3 normalMatrix;
+#include "uniforms.glsl"
+
+uniform mat3 normalMatrix;			// in row-major order
 uniform mat4 modelViewMatrix;
-uniform mat4 projectionMatrix;
-uniform vec4 lightSourcePosition[3];	// W0 = environment map rotation (-1.0 to 1.0), W1, W2 = viewport X, Y
-uniform vec4 lightSourceDiffuse[3];		// A0 = overall brightness, A1, A2 = viewport width, height
-uniform vec4 lightSourceAmbient;		// A = tone mapping control (1.0 = full tone mapping)
 
 uniform vec4 vertexColorOverride;	// components greater than zero replace the vertex color
 
@@ -37,7 +35,7 @@ void main()
 	vec3	t = tangentVector;
 	vec3	b = bitangentVector;
 
-	if ( numBones > 0 )
+	if ( boneWeights[0] > 0.0 && renderOptions1.x != 0 )
 		boneTransform( v, n, t, b );
 
 	v = modelViewMatrix * v;
@@ -48,7 +46,7 @@ void main()
 	mat3 btnMatrix = mat3( normalize(b * normalMatrix), normalize(t * normalMatrix), normalize(n * normalMatrix) );
 	btnMatrix = transpose( btnMatrix );
 
-	reflMatrix = btnMatrix * viewMatrix;
+	reflMatrix = btnMatrix * envMapRotation;
 
 	if ( projectionMatrix[3][3] == 1.0 )
 		ViewDir = btnMatrix * vec3(0.0, 0.0, 1.0);	// orthographic view
@@ -56,7 +54,8 @@ void main()
 		ViewDir = btnMatrix * -v.xyz;
 	LightDir = btnMatrix * lightSourcePosition[0].xyz;
 
-	A = vec4( sqrt(lightSourceAmbient.rgb) * 0.375, lightSourceAmbient.a );
+	A = vec4( sqrt(lightSourceAmbient.rgb) * 0.375, lightingControls.x );
 	C = mix( vertexColor, vertexColorOverride, greaterThan( vertexColorOverride, vec4( 0.0 ) ) );
-	D = vec4( sqrt(lightSourceDiffuse[0].rgb), lightSourceDiffuse[0].a );
+	D = vec4( sqrt(lightSourceDiffuse[0].rgb), lightingControls.y );
+	glowScale = sqrt( lightingControls.z );
 }

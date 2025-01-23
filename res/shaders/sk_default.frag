@@ -1,5 +1,7 @@
 #version 410 core
 
+#include "uniforms.glsl"
+
 uniform sampler2D BaseMap;
 uniform sampler2D NormalMap;
 uniform sampler2D GlowMap;
@@ -48,16 +50,16 @@ in vec2 texCoord;
 in vec4 A;
 in vec4 C;
 in vec4 D;
+in float glowScale;
 
 in mat3 btnMatrix;
-in mat3 reflMatrix;
 
 out vec4 fragColor;
 
 mat3 btnMatrix_norm = mat3(normalize(btnMatrix[0]), normalize(btnMatrix[1]), normalize(btnMatrix[2]));
 
 
-vec3 tonemap(vec3 x, float y)
+vec3 tonemap(vec3 x)
 {
 	float a = 0.15;
 	float b = 0.50;
@@ -66,9 +68,9 @@ vec3 tonemap(vec3 x, float y)
 	float e = 0.02;
 	float f = 0.30;
 
-	vec3 z = x * (y * 4.22978723);
+	vec3 z = x * x * D.a * (A.a * 4.22978723);
 	z = (z * (a * z + b * c) + d * e) / (z * (a * z + b) + d * f) - e / f;
-	return z / (y * 0.93333333);
+	return sqrt(z / (A.a * 0.93333333));
 }
 
 vec3 toGrayscale(vec3 color)
@@ -115,7 +117,7 @@ void main()
 	float NdotNegL = max( dot(normal, -L), 0.0 );
 
 	vec3 reflected = reflect( -E, normal );
-	vec3 reflectedWS = reflMatrix * reflected;
+	vec3 reflectedWS = envMapRotation * reflected;
 
 
 	vec3 albedo = baseMap.rgb * C.rgb;
@@ -187,8 +189,8 @@ void main()
 		albedo *= tintColor;
 	}
 
-	color.rgb = albedo * (diffuse + emissive) + spec;
-	color.rgb = tonemap( color.rgb * D.a, A.a );
+	color.rgb = albedo * (diffuse + emissive * glowScale) + spec;
+	color.rgb = tonemap( color.rgb );
 
 	fragColor = color;
 }

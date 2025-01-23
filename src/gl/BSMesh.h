@@ -55,7 +55,7 @@ public:
 	}
 
 	int skinID = -1;
-	QVector<BoneWeightsUNorm> weightsUNORM;
+	int numWeights = 0;
 	QVector<QVector<Triangle>> gpuLODs;
 	QVector<QString> boneNames;
 

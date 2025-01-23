@@ -977,7 +977,7 @@ public:
 		tex.setNifFolder( nif->getFolder() );
 
 		if ( isExternal )
-			tex.bind( filename );
+			tex.bind( filename, nif );
 		else
 			tex.bind( iBlock );
 
@@ -1112,12 +1112,12 @@ public:
 
 	QModelIndex cast( NifModel * nif, const QModelIndex & index ) override final
 	{
-		TexCache * tex = new TexCache();
-		tex->setNifFolder( nif->getFolder() );
+		TexCache	tex;
+		tex.setNifFolder( nif->getFolder() );
 		QModelIndex iBlock = nif->getBlockIndex( index );
 
 		if ( nif->blockInherits( iBlock, "NiSourceTexture" ) ) {
-			tex->bind( index );
+			tex.bind( index );
 			QString file = nif->getFolder();
 
 			if ( nif->checkVersion( 0x0A010000, 0 ) ) {
@@ -1129,23 +1129,21 @@ public:
 			QString filename  = QFileDialog::getSaveFileName( qApp->activeWindow(), Spell::tr( "Export texture" ), file, "Textures (*.dds *.tga)" );
 
 			if ( !filename.isEmpty() ) {
-				if ( tex->exportFile( iData, filename ) ) {
+				if ( tex.exportFile( iData, filename ) ) {
 					nif->set<int>( index, "Use External", 1 );
 					filename = TexCache::stripPath( filename, nif->getFolder() );
 					nif->set<QString>( index, "File Name", filename );
-					tex->bind( filename );
+					tex.bind( filename, nif );
 				}
 			}
 
 			return index;
 		} else if ( nif->blockInherits( iBlock, "NiPixelFormat" ) ) {
-			TexCache * tex = new TexCache();
-			tex->setNifFolder( nif->getFolder() );
 			QString file = nif->getFolder();
 			QString filename = QFileDialog::getSaveFileName( qApp->activeWindow(), Spell::tr( "Export texture" ), file, "Textures (*.dds *.tga)" );
 
 			if ( !filename.isEmpty() ) {
-				tex->exportFile( index, filename );
+				tex.exportFile( index, filename );
 			}
 		}
 
@@ -1174,22 +1172,15 @@ public:
 			return false;
 		}
 
-		TexCache * tex = new TexCache();
-		tex->setNifFolder( nif->getFolder() );
-
-		if ( tex->bind( nif->get<QString>( iBlock, "File Name" ) ) ) {
-			return true;
-		}
-
-		return false;
+		return !TexCache::find( nif->get<QString>( iBlock, "File Name" ), nif ).isEmpty();
 	}
 
 	QModelIndex cast( NifModel * nif, const QModelIndex & index ) override final
 	{
-		TexCache * tex = new TexCache();
-		tex->setNifFolder( nif->getFolder() );
+		TexCache	tex;
+		tex.setNifFolder( nif->getFolder() );
 
-		if ( tex->bind( index ) ) {
+		if ( tex.bind( index ) ) {
 			//qDebug() << "spEmbedTexture: Embedding texture " << index;
 
 			int blockNum = nif->getBlockNumber( index );
@@ -1200,7 +1191,7 @@ public:
 			//qDebug() << "spEmbedTexture: Block number" << blockNum << "holds source" << iSourceTexture << "Pixel data will be stored in" << iPixelData;
 
 			// finish writing this function
-			if ( tex->importFile( nif, iSourceTexture, iPixelData ) ) {
+			if ( tex.importFile( nif, iSourceTexture, iPixelData ) ) {
 				QString tempFileName = nif->get<QString>( iSourceTexture, "File Name" );
 				tempFileName = TexCache::stripPath( tempFileName, nif->getFolder() );
 				nif->set<int>( iSourceTexture, "Use External", 0 );

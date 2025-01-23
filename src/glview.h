@@ -37,7 +37,6 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "model/nifmodel.h"
 
 #include <QOpenGLWindow> // Inherited
-#include <QGraphicsView>
 #include <QDateTime>
 #include <QPersistentModelIndex>
 

@@ -1125,6 +1125,7 @@ XXH_PUBLIC_API XXH_PUREF XXH64_hash_t XXH64_hashFromCanonical(XXH_NOESCAPE const
 #  define XXH_VSX    5 /*!< VSX and ZVector for POWER8/z13 (64-bit) */
 #  define XXH_SVE    6 /*!< SVE for some ARMv8-A and ARMv9-A */
 #  define XXH_LSX    7 /*!< LSX (128-bit SIMD) for LoongArch64 */
+#  define XXH_LASX   8 /*!< LASX (256-bit SIMD) for LoongArch64 */
 
 
 /*-**********************************************************************
@@ -3855,6 +3856,9 @@ XXH_PUBLIC_API XXH64_hash_t XXH64_hashFromCanonical(XXH_NOESCAPE const XXH64_can
 #    include <immintrin.h>
 #  elif defined(__SSE2__)
 #    include <emmintrin.h>
+#  elif defined(__loongarch_asx)
+#    include <lasxintrin.h>
+#    include <lsxintrin.h>
 #  elif defined(__loongarch_sx)
 #    include <lsxintrin.h>
 #  endif
@@ -3991,6 +3995,8 @@ XXH_PUBLIC_API XXH64_hash_t XXH64_hashFromCanonical(XXH_NOESCAPE const XXH64_can
      || (defined(__s390x__) && defined(__VEC__)) \
      && defined(__GNUC__) /* TODO: IBM XL */
 #    define XXH_VECTOR XXH_VSX
+#  elif defined(__loongarch_asx)
+#    define XXH_VECTOR XXH_LASX
 #  elif defined(__loongarch_sx)
 #    define XXH_VECTOR XXH_LSX
 #  else
@@ -4029,6 +4035,8 @@ XXH_PUBLIC_API XXH64_hash_t XXH64_hashFromCanonical(XXH_NOESCAPE const XXH64_can
 #  elif XXH_VECTOR == XXH_AVX512  /* avx512 */
 #     define XXH_ACC_ALIGN 64
 #  elif XXH_VECTOR == XXH_SVE   /* sve */
+#     define XXH_ACC_ALIGN 64
+#  elif XXH_VECTOR == XXH_LASX   /* lasx */
 #     define XXH_ACC_ALIGN 64
 #  elif XXH_VECTOR == XXH_LSX   /* lsx */
 #     define XXH_ACC_ALIGN 64
@@ -5712,7 +5720,7 @@ XXH3_scrambleAcc_lsx(void* XXH_RESTRICT acc, const void* XXH_RESTRICT secret)
     {
         __m128i* const xacc = (__m128i*) acc;
         const __m128i* const xsecret = (const __m128i *) secret;
-        const __m128i prime32 = __lsx_vreplgr2vr_w((int)XXH_PRIME32_1);
+        const __m128i prime32 = __lsx_vreplgr2vr_d(XXH_PRIME32_1);
 
         for (size_t i = 0; i < XXH_STRIPE_LEN / sizeof(__m128i); i++) {
             /* xacc[i] ^= (xacc[i] >> 47) */
@@ -5724,10 +5732,69 @@ XXH3_scrambleAcc_lsx(void* XXH_RESTRICT acc, const void* XXH_RESTRICT secret)
             __m128i const data_key = __lsx_vxor_v(data_vec, key_vec);
 
             /* xacc[i] *= XXH_PRIME32_1; */
-            __m128i const data_key_hi = __lsx_vsrli_d(data_key, 32);
-            __m128i const prod_lo = __lsx_vmulwev_d_wu(data_key, prime32);
-            __m128i const prod_hi = __lsx_vmulwev_d_wu(data_key_hi, prime32);
-            xacc[i] = __lsx_vadd_d(prod_lo, __lsx_vslli_d(prod_hi, 32));
+            xacc[i] = __lsx_vmul_d(data_key, prime32);
+        }
+    }
+}
+
+#endif
+
+#if (XXH_VECTOR == XXH_LASX)
+#define _LASX_SHUFFLE(z, y, x, w) (((z) << 6) | ((y) << 4) | ((x) << 2) | (w))
+
+XXH_FORCE_INLINE void
+XXH3_accumulate_512_lasx( void* XXH_RESTRICT acc,
+                    const void* XXH_RESTRICT input,
+                    const void* XXH_RESTRICT secret)
+{
+    XXH_ASSERT((((size_t)acc) & 31) == 0);
+    {
+        __m256i* const xacc    =       (__m256i *) acc;
+        const __m256i* const xinput  = (const __m256i *) input;
+        const __m256i* const xsecret = (const __m256i *) secret;
+
+        for (size_t i = 0; i < XXH_STRIPE_LEN / sizeof(__m256i); i++) {
+            /* data_vec = xinput[i]; */
+            __m256i const data_vec = __lasx_xvld(xinput + i, 0);
+            /* key_vec = xsecret[i]; */
+            __m256i const key_vec = __lasx_xvld(xsecret + i, 0);
+            /* data_key = data_vec ^ key_vec; */
+            __m256i const data_key = __lasx_xvxor_v(data_vec, key_vec);
+            /* data_key_lo = data_key >> 32; */
+            __m256i const data_key_lo = __lasx_xvsrli_d(data_key, 32);
+            // __m256i const data_key_lo = __lasx_xvsrli_d(data_key, 32);
+            /* product = (data_key & 0xffffffff) * (data_key_lo & 0xffffffff); */
+            __m256i const product = __lasx_xvmulwev_d_wu(data_key, data_key_lo);
+            /* xacc[i] += swap(data_vec); */
+            __m256i const data_swap = __lasx_xvshuf4i_w(data_vec, _LASX_SHUFFLE(1, 0, 3, 2));
+            __m256i const sum = __lasx_xvadd_d(xacc[i], data_swap);
+            /* xacc[i] += product; */
+            xacc[i] = __lasx_xvadd_d(product, sum);
+        }
+    }
+}
+XXH_FORCE_INLINE XXH3_ACCUMULATE_TEMPLATE(lasx)
+
+XXH_FORCE_INLINE void
+XXH3_scrambleAcc_lasx(void* XXH_RESTRICT acc, const void* XXH_RESTRICT secret)
+{
+    XXH_ASSERT((((size_t)acc) & 31) == 0);
+    {
+        __m256i* const xacc = (__m256i*) acc;
+        const __m256i* const xsecret = (const __m256i *) secret;
+        const __m256i prime32 = __lasx_xvreplgr2vr_d(XXH_PRIME32_1);
+
+        for (size_t i = 0; i < XXH_STRIPE_LEN / sizeof(__m256i); i++) {
+            /* xacc[i] ^= (xacc[i] >> 47) */
+            __m256i const acc_vec = xacc[i];
+            __m256i const shifted = __lasx_xvsrli_d(acc_vec, 47);
+            __m256i const data_vec = __lasx_xvxor_v(acc_vec, shifted);
+            /* xacc[i] ^= xsecret[i]; */
+            __m256i const key_vec = __lasx_xvld(xsecret + i, 0);
+            __m256i const data_key = __lasx_xvxor_v(data_vec, key_vec);
+
+            /* xacc[i] *= XXH_PRIME32_1; */
+            xacc[i] = __lasx_xvmul_d(data_key, prime32);
         }
     }
 }
@@ -5962,6 +6029,12 @@ typedef void (*XXH3_f_initCustomSecret)(void* XXH_RESTRICT, xxh_u64);
 #define XXH3_accumulate_512 XXH3_accumulate_512_sve
 #define XXH3_accumulate     XXH3_accumulate_sve
 #define XXH3_scrambleAcc    XXH3_scrambleAcc_scalar
+#define XXH3_initCustomSecret XXH3_initCustomSecret_scalar
+
+#elif (XXH_VECTOR == XXH_LASX)
+#define XXH3_accumulate_512 XXH3_accumulate_512_lasx
+#define XXH3_accumulate     XXH3_accumulate_lasx
+#define XXH3_scrambleAcc    XXH3_scrambleAcc_lasx
 #define XXH3_initCustomSecret XXH3_initCustomSecret_scalar
 
 #elif (XXH_VECTOR == XXH_LSX)

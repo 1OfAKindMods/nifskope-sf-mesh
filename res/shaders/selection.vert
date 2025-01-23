@@ -2,8 +2,9 @@
 
 out vec4 C;
 
+#include "uniforms.glsl"
+
 uniform mat4 modelViewMatrix;
-uniform mat4 projectionMatrix;
 
 uniform vec4 vertexColorOverride;	// components greater than zero replace the vertex color
 uniform vec4 highlightColor;
@@ -27,7 +28,7 @@ void main()
 {
 	vec4	v = vec4( vertexPosition, 1.0 );
 
-	if ( numBones > 0 )
+	if ( boneWeights[0] > 0.0 && renderOptions1.x != 0 )
 		boneTransform( v );
 
 	v = projectionMatrix * ( modelViewMatrix * v );

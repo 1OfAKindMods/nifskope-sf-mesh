@@ -457,7 +457,6 @@ void Scene::drawPoints( const Vector3 * positions, size_t numVerts )
 	NifSkopeOpenGLContext *	context = renderer;
 	prog->uni4f( "vertexColorOverride", FloatVector4( 1.0e-15f ).maxValues( currentGLColor ) );
 	prog->uni1i( "selectionParam", -1 );
-	prog->uni1i( "numBones", 0 );
 
 	float	pointSize = currentGLPointSize;
 	if ( selecting ) {
@@ -560,7 +559,6 @@ void Scene::drawTriangles( const Vector3 * positions, size_t numVerts, const Flo
 	}
 	prog->uni4m( "modelViewMatrix", *currentModelViewMatrix );
 	prog->uni1i( "selectionParam", -1 );
-	prog->uni1i( "numBones", 0 );
 
 	if ( selecting ) {
 		glDisable( GL_BLEND );
@@ -961,7 +959,7 @@ void Scene::drawCone( const Vector3 & c, Vector3 n, float a, int sd )
 void Scene::drawRagdollCone( const Vector3 & pivot, const Vector3 & twist, const Vector3 & plane,
 								float coneAngle, float minPlaneAngle, float maxPlaneAngle, int sd )
 {
-	Vector3 *	positions = allocateVertexAttr( size_t( sd ) * 4 );
+	Vector3 *	positions = allocateVertexAttr( size_t( sd ) + 2 );
 	if ( !positions )
 		return;
 
@@ -973,20 +971,15 @@ void Scene::drawRagdollCone( const Vector3 & pivot, const Vector3 & twist, const
 	m[3][3] = 1.0f;
 	pushAndMultModelViewMatrix( Matrix4( &( m[0][0] ) ) );
 
-	Vector3	p0( 0.0f, std::sin( maxPlaneAngle ), 1.0f );
-	for ( int i = 0; i < sd; i++ ) {
-		float	f = ( 2.0f * PI * float(i + 1) / float(sd) );
+	positions[0] = Vector3();
+	for ( int i = 0; i <= sd; i++ ) {
+		float	f = ( 2.0f * PI * float(i) / float(sd) );
 		float	x = std::sin( f );
 		float	y = std::sin( f <= PI / 2 || f >= 3 * PI / 2 ? maxPlaneAngle : -minPlaneAngle ) * std::cos( f );
-		Vector3	p1( x, y, 1.0f );
-		positions[i * 4] = Vector3();
-		positions[i * 4 + 1] = p0;
-		positions[i * 4 + 2] = p0;
-		positions[i * 4 + 3] = p1;
-		p0 = p1;
+		positions[i + 1] = Vector3( x, y, 1.0f );
 	}
 
-	drawLines( positions, size_t( sd ) * 4 );
+	drawTriangles( positions, size_t( sd ) + 2, nullptr, true, GL_TRIANGLE_FAN );
 	popModelViewMatrix();
 }
 
@@ -1067,18 +1060,32 @@ void Scene::drawRail( const Vector3 & a, const Vector3 & b )
 void Scene::drawSolidArc( const Vector3 & c, const Vector3 & n, const Vector3 & x, const Vector3 & y,
 							float an, float ax, float r, int sd )
 {
+	if ( sd < 1 )
+		return;
+	size_t	numVerts = ( size_t( sd ) + 1 ) * 2;
+	Vector3 *	positions = allocateVertexAttr( numVerts );
+	if ( !positions )
+		return;
+
+	FloatVector4	m[4];
+	m[0] = FloatVector4( x ) * r;
+	m[1] = FloatVector4( y ) * r;
+	m[2] = FloatVector4( n );
+	m[3] = FloatVector4( c ).blendValues( FloatVector4( 1.0f ), 0x08 );
+	pushAndMultModelViewMatrix( Matrix4( &(m[0][0]) ) );
+
 	bool cull = glIsEnabled( GL_CULL_FACE );
 	glDisable( GL_CULL_FACE );
-	glBegin( GL_QUAD_STRIP );
 
 	for ( int j = 0; j <= sd; j++ ) {
 		float f = ( ax - an ) * float(j) / float(sd) + an;
 
-		glVertex( c + x * r * sin( f ) + y * r * cos( f ) + n );
-		glVertex( c + x * r * sin( f ) + y * r * cos( f ) - n );
+		positions[j * 2] = Vector3( std::sin( f ), std::cos( f ), 1.0f );
+		positions[j * 2 + 1] = Vector3( std::sin( f ), std::cos( f ), -1.0f );
 	}
 
-	glEnd();
+	drawTriangles( positions, numVerts, nullptr, true, GL_TRIANGLE_STRIP );
+	popModelViewMatrix();
 
 	if ( cull )
 		glEnable( GL_CULL_FACE );
@@ -1539,4 +1546,47 @@ void Scene::drawCMS( const NifModel * nif, const QModelIndex & iShape, bool soli
 void Scene::renderText( [[maybe_unused]] const Vector3 & c, [[maybe_unused]] const QString & str )
 {
 	// TODO: implement this function
+}
+
+NifSkopeOpenGLContext::Program * Scene::setupProgram( std::string_view name, unsigned int elementMode )
+{
+	NifSkopeOpenGLContext *	context = renderer;
+	if ( !context ) [[unlikely]]
+		return nullptr;
+	auto	prog = context->getCurrentProgram();
+	if ( !( ( prog && prog->name == name ) || ( prog = context->useProgram( name ) ) != nullptr ) )
+		return nullptr;
+
+	prog->uni4f( "vertexColorOverride", FloatVector4( 1.0e-15f ).maxValues( currentGLColor ) );
+	prog->uni4m( "modelViewMatrix", *currentModelViewMatrix );
+
+	if ( elementMode == GL_LINES || elementMode == GL_LINE_STRIP || elementMode == GL_LINE_LOOP ) {
+		prog->uni1f( "lineWidth", currentGLLineWidth );
+	} else {
+		prog->uni1i( "selectionParam", -1 );
+		if ( elementMode == GL_POINTS ) {
+			float	pointSize = currentGLPointSize;
+			if ( selecting ) {
+				prog->uni1i( "selectionFlags", ( isSelModeVertex() ? 0x0003 : 0x0002 ) );
+			} else {
+				pointSize += 0.5f;
+				prog->uni1i( "selectionFlags", ( roundFloat( std::min( pointSize * 8.0f, 255.0f ) ) << 8 ) | 0x0002 );
+			}
+			glPointSize( pointSize );
+		} else if ( name == "wireframe.prog" ) {
+			prog->uni3m( "normalMatrix", Matrix() );
+			prog->uni1f( "lineWidth", currentGLLineWidth );
+		} else {
+			prog->uni1i( "selectionFlags", 0 );
+		}
+	}
+
+	if ( selecting ) {
+		glDisable( GL_BLEND );
+	} else {
+		glEnable( GL_BLEND );
+		context->fn->glBlendFuncSeparate( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA );
+	}
+
+	return prog;
 }

@@ -65,6 +65,7 @@ public:
 
 protected:
 	void updateImpl( const NifModel * nif, const QModelIndex & index ) override;
+	void addBoneWeight( int vertexNum, int boneNum, float weight );
 	void updateData( const NifModel * nif ) override;
 
 	void updateData_NiMesh( const NifModel * nif );

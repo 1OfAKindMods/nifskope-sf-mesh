@@ -52,6 +52,7 @@ in vec2 texCoord;
 in vec4 A;
 in vec4 C;
 in vec4 D;
+in float glowScale;
 
 out vec4 fragColor;
 
@@ -177,7 +178,7 @@ void main()
 		}
 
 		// Emissive
-		vec3 emissive = glowColor.rgb * glowMult;
+		vec3 emissive = glowColor.rgb * ( glowMult * glowScale );
 		if ( ( vertexColorFlags & 0x10 ) == 0 )
 			emissive *= frontMaterialEmission.rgb * frontMaterialEmission.a;
 		else

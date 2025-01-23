@@ -89,8 +89,6 @@ public:
 			auto vt = item->valueType();
 			if ( vt == NifValue::tStringIndex )
 				return true;
-			if ( nif->checkVersion( 0x14010003, 0 ) && ( vt == NifValue::tString || vt == NifValue::tFilePath ) )
-				return true;
 		}
 
 		return false;

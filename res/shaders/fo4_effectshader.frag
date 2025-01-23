@@ -40,12 +40,12 @@ in vec3 ViewDir;
 
 in vec2 texCoord;
 
-in vec4 A;
+flat in vec4 A;
 in vec4 C;
-in vec4 D;
+flat in vec4 D;
 
 in mat3 btnMatrix;
-in mat3 reflMatrix;
+flat in mat3 reflMatrix;
 
 out vec4 fragColor;
 
@@ -152,5 +152,5 @@ void main()
 		color.rgb += cube.rgb * falloff;
 	}
 
-	fragColor = vec4( color.rgb * D.a, color.a );
+	fragColor = vec4( color.rgb * sqrt(D.a), color.a );
 }

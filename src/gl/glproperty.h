@@ -610,44 +610,7 @@ namespace ShaderFlags
 		NO_EXPOSURE = 3707406987
 	};
 
-	static QMap<uint, uint64_t> CRC_TO_FLAG = {
-		// SF1
-		{PBR, SLSF1_Specular},
-		{CAST_SHADOWS, SLSF1_Cast_Shadows},
-		{ZBUFFER_TEST, SLSF1_ZBuffer_Test},
-		{SKINNED, SLSF1_Skinned},
-		{ENVMAP, SLSF1_Environment_Mapping},
-		{VERTEX_ALPHA, SLSF1_Vertex_Alpha},
-		{FACE, SLSF1_Facegen_Detail_Map},
-		{GRAYSCALE_TO_PALETTE_COLOR, SLSF1_Greyscale_To_PaletteColor},
-		{GRAYSCALE_TO_PALETTE_ALPHA, SLSF1_Greyscale_To_PaletteAlpha},
-		{DECAL, SLSF1_Decal},
-		{DYNAMIC_DECAL, SLSF1_Dynamic_Decal},
-		{EMIT_ENABLED, SLSF1_Own_Emit},
-		{REFRACTION, SLSF1_Refraction},
-		{SKIN_TINT, SLSF1_FaceGen_RGB_Tint},
-		{RGB_FALLOFF, SLSF1_Recieve_Shadows},
-		{EXTERNAL_EMITTANCE, SLSF1_External_Emittance},
-		{MODELSPACENORMALS, SLSF1_Model_Space_Normals},
-		{FALLOFF, SLSF1_Use_Falloff},
-		{SOFT_EFFECT, SLSF1_Soft_Effect},
-		// SF2
-		{ZBUFFER_WRITE, (uint64_t)SLSF2_ZBuffer_Write << 32},
-		{GLOWMAP, (uint64_t)SLSF2_Glow_Map << 32},
-		{TWO_SIDED, (uint64_t)SLSF2_Double_Sided << 32},
-		{VERTEXCOLORS, (uint64_t)SLSF2_Vertex_Colors << 32},
-		{NOFADE, (uint64_t)SLSF2_No_Fade << 32},
-		{WEAPON_BLOOD, (uint64_t)SLSF2_Weapon_Blood << 32},
-		{TRANSFORM_CHANGED, (uint64_t)SLSF2_Assume_Shadowmask << 32},
-		{EFFECT_LIGHTING, (uint64_t)SLSF2_Effect_Lighting << 32},
-		{LOD_OBJECTS, (uint64_t)SLSF2_LOD_Objects << 32},
-
-		// TODO
-		{REFRACTION_FALLOFF, 0},
-		{INVERTED_FADE_PATTERN, 0},
-		{HAIRTINT, 0},
-		{NO_EXPOSURE, 0},
-	};
+	extern const QMap<uint, uint64_t> CRC_TO_FLAG;
 }
 
 enum TexClampMode : unsigned int

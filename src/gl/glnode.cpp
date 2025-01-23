@@ -34,10 +34,8 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "nifskope.h"
 #include "gl/controllers.h"
-#include "gl/glmarker.h"
 #include "gl/glscene.h"
-#include "gl/marker/furniture.h"
-#include "gl/marker/constraints.h"
+#include "gl/glmarker.h"
 #include "model/nifmodel.h"
 #include "ui/settingsdialog.h"
 #include "glview.h"
@@ -188,18 +186,6 @@ void Node::setGLColor( FloatVector4 c ) const
 	NifSkopeOpenGLContext::Program *	prog;
 	if ( scene->renderer && ( prog = scene->renderer->getCurrentProgram() ) != nullptr )
 		prog->uni4f( "vertexColorOverride", FloatVector4( 1.0e-15f ).maxValues( c ) );
-}
-
-// Old Options API
-//	TODO: Move away from the GL-like naming
-void Node::glHighlightColor() const
-{
-	setGLColor( scene->highlightColor );
-}
-
-void Node::glNormalColor() const
-{
-	setGLColor( scene->wireframeColor );
 }
 
 
@@ -555,7 +541,7 @@ void Node::drawSelection() const
 	scene->loadModelViewMatrix( viewTrans() );
 
 	float sceneRadius = scene->bounds().radius;
-	float normalScale = (sceneRadius > 150.0) ? 1.0 : sceneRadius / 150.0;
+	float normalScale = std::min( sceneRadius / 9.375f, ( nif->getBSVersion() < 170 ? 16.0f : 0.25f ) );
 
 	if ( currentBlock == "BSConnectPoint::Parents" ) {
 		auto cp = nif->getIndex( scene->currentBlock, "Connect Points" );
@@ -581,7 +567,7 @@ void Node::drawSelection() const
 			m.fromQuat( rot );
 			t.rotation = m;
 			t.translation = trans;
-			t.scale = normalScale * 16;
+			t.scale = normalScale;
 
 			scene->pushAndMultModelViewMatrix( t );
 
@@ -605,6 +591,7 @@ void Node::drawSelection() const
 	if ( currentBlock.endsWith( "Node" ) && scene->hasOption(Scene::ShowNodes) && scene->hasOption(Scene::ShowAxes) ) {
 		Transform t;
 		t.rotation = nif->get<Matrix>( scene->currentIndex, "Rotation" );
+		t.scale = normalScale;
 
 		scene->pushAndMultModelViewMatrix( t );
 
@@ -648,41 +635,80 @@ void Node::drawSelection() const
 	}
 }
 
-void Node::drawVertexSelection( QVector<Vector3> & verts, int i )
+void Node::drawVertexSelection( qsizetype numVerts, int i )
 {
 	glDepthFunc( GL_LEQUAL );
 
 	scene->setGLColor( scene->wireframeColor );
 	scene->setGLPointSize( GLView::Settings::vertexPointSize );
-	scene->drawPoints( verts.constData(), size_t( verts.size() ) );
+	scene->drawPoints( nullptr, size_t( numVerts ) );
 
-	if ( i >= 0 && i < verts.size() ) {
+	if ( i >= 0 && i < numVerts ) {
 		glDepthFunc( GL_ALWAYS );
 		scene->setGLColor( scene->highlightColor );
 		scene->setGLPointSize( GLView::Settings::vertexPointSizeSelected );
-		scene->drawPoints( verts.constData() + i );
+
+		if ( scene->setupProgram( "selection.prog", GL_POINTS ) )
+			scene->renderer->fn->glDrawArrays( GL_POINTS, GLint( i ), 1 );
 	}
 }
 
-void Node::drawTriangleSelection( QVector<Vector3> const & verts, Triangle const & tri )
+void Node::drawTriangleSelection( const QVector<Triangle> & triangles, int i, int n, int startVertex, int endVertex )
 {
+	if ( i < 0 || i >= triangles.size() || n < 1 )
+		return;
+
 	glDepthFunc( GL_ALWAYS );
 
 	scene->setGLColor( scene->highlightColor );
 	scene->setGLLineWidth( GLView::Settings::lineWidthWireframe );
-	qsizetype	v0 = tri[0];
-	qsizetype	v1 = tri[1];
-	qsizetype	v2 = tri[2];
-	if ( std::max( v0, std::max( v1, v2 ) ) < verts.size() ) {
-		Vector3	positions[4] = { verts.at( v0 ), verts.at( v1 ), verts.at( v2 ), verts.at( v0 ) };
-		scene->drawLineStrip( positions, 4 );
+	if ( !scene->setupProgram( "wireframe.prog", GL_TRIANGLES ) )
+		return;
+
+	n = std::min( n, int( triangles.size() - i ) );
+	if ( endVertex < 0 ) {
+		scene->renderer->fn->glDrawElements( GL_TRIANGLES, GLsizei( n ) * 3,
+												GL_UNSIGNED_SHORT, (void *) ( qsizetype( i ) * 6 ) );
+		return;
+	}
+
+	int	startPos = 0;
+	int	endPos = 0;
+	for ( ; n > 0; i++, n-- ) {
+		const Triangle &	tri = triangles.at( i );
+		if ( int( tri[0] ) >= startVertex && int( tri[0] ) < endVertex ) {
+			if ( std::min< int >( tri[1], tri[2] ) >= startVertex && std::max< int >( tri[1], tri[2] ) < endVertex ) {
+				endPos++;
+				continue;
+			}
+			qDebug() << "triangle with multiple materials?" << i;
+		}
+		if ( endPos > startPos ) {
+			scene->renderer->fn->glDrawElements( GL_TRIANGLES, GLsizei( endPos - startPos ) * 3,
+													GL_UNSIGNED_SHORT, (void *) ( qsizetype( startPos ) * 6 ) );
+		}
+		startPos = i + 1;
+	}
+	if ( endPos > startPos ) {
+		scene->renderer->fn->glDrawElements( GL_TRIANGLES, GLsizei( endPos - startPos ) * 3,
+												GL_UNSIGNED_SHORT, (void *) ( qsizetype( startPos ) * 6 ) );
 	}
 }
 
-void Node::drawTriangleIndex( QVector<Vector3> const & verts, Triangle const & tri, int index )
+void Node::drawTriangleIndex( const QVector<Vector3> & verts, const Triangle & t, int i )
 {
-	Vector3 c = ( verts.value( tri.v1() ) + verts.value( tri.v2() ) + verts.value( tri.v3() ) ) /  3.0;
-	scene->renderText( c, QString( "%1" ).arg( index ) );
+	Vector3	position;
+	int	n = 0;
+	for ( int i = 0; i < 3; i++ ) {
+		if ( qsizetype( t[i] ) < verts.size() ) {
+			position += verts[t[i]];
+			n++;
+		}
+	}
+	if ( !n )
+		return;
+	position = position / float( n );
+	scene->renderText( position, QString( "%1" ).arg( i ) );
 }
 
 void Node::drawHvkShape( const NifModel * nif, const QModelIndex & iShape, QStack<QModelIndex> & stack,
@@ -695,7 +721,7 @@ void Node::drawHvkShape( const NifModel * nif, const QModelIndex & iShape, QStac
 	if ( (!nif || !iShape.isValid() || stack.contains( iShape )) && !extraData )
 		return;
 
-	if ( !scene->isSelModeObject() )
+	if ( !scene->isSelModeObject() || !scene->renderer )
 		return;
 
 	stack.push( iShape );
@@ -704,7 +730,7 @@ void Node::drawHvkShape( const NifModel * nif, const QModelIndex & iShape, QStac
 
 	scene->loadModelViewMatrix( parentTransform );
 
-	if ( name.endsWith( "ListShape" ) ) {
+	if ( name.endsWith( QLatin1StringView("ListShape") ) ) {
 		QModelIndex iShapes = nif->getIndex( iShape, "Sub Shapes" );
 
 		if ( iShapes.isValid() ) {
@@ -822,23 +848,17 @@ void Node::drawHvkShape( const NifModel * nif, const QModelIndex & iShape, QStac
 		}
 
 		QModelIndex iData = nif->getBlockIndex( nif->getLink( iShape, "Data" ) );
+		QModelIndex iVerts, iTriangles;
 
-		if ( iData.isValid() ) {
-			QVector<Vector3> verts = nif->getArray<Vector3>( iData, "Vertices" );
-			QModelIndex iTris = nif->getIndex( iData, "Triangles" );
+		if ( iData.isValid()
+			&& ( iVerts = nif->getIndex( iData, "Vertices" ) ).isValid() && nif->rowCount( iVerts ) >= 2
+			&& ( iTriangles = nif->getIndex( iData, "Triangles" ) ).isValid() && nif->rowCount( iTriangles ) >= 1 ) {
 
-			for ( int t = 0; t < nif->rowCount( iTris ); t++ ) {
-				Triangle tri = nif->get<Triangle>( nif->getIndex( iTris, t ), "Triangle" );
+			QVector<Vector3>	verts = nif->getArray<Vector3>( iVerts );
+			QVector<Triangle>	triangles = nif->getArray<Triangle>( iTriangles );
 
-				if ( tri[0] != tri[1] || tri[1] != tri[2] || tri[2] != tri[0] ) {
-					glBegin( GL_LINE_STRIP );
-					glVertex( verts.value( tri[0] ) );
-					glVertex( verts.value( tri[1] ) );
-					glVertex( verts.value( tri[2] ) );
-					glVertex( verts.value( tri[0] ) );
-					glEnd();
-				}
-			}
+			scene->drawTriangles( verts.constData(), size_t( verts.size() ), nullptr, false, GL_TRIANGLES,
+									size_t( triangles.size() ) * 3, GL_UNSIGNED_SHORT, triangles.constData() );
 
 			// Handle Selection of hkPackedNiTriStripsData
 			if ( scene->currentBlock == iData ) {
@@ -852,28 +872,27 @@ void Node::drawHvkShape( const NifModel * nif, const QModelIndex & iShape, QStac
 				}
 
 				if ( n == "Vertices" || n == "Normals" || n == "Vertex Colors" || n == "UV Sets" ) {
-					drawVertexSelection( verts, i );
-				} else if ( ( n == "Faces" || n == "Triangles" ) ) {
+					drawVertexSelection( verts.size(), i );
+				} else if ( n == "Faces" || n == "Triangles" ) {
 					if ( i == -1 ) {
 						glDepthFunc( GL_ALWAYS );
-						glHighlightColor();
-
-						//for ( int t = 0; t < nif->rowCount( iTris ); t++ )
-						//	DrawTriangleIndex( verts, nif->get<Triangle>( nif->getIndex( iTris, t ), "Triangle" ), t );
+						scene->setGLColor( scene->highlightColor );
+#if 0
+						for ( int t = 0; t < triangles.size(); t++ )
+							drawTriangleIndex( verts, triangles[t], t );
+#endif
 					} else if ( nif->isCompound( nif->itemStrType( scene->currentIndex ) ) ) {
-						Triangle tri = nif->get<Triangle>( nif->getIndex( iTris, i ), "Triangle" );
-						drawTriangleSelection( verts, tri );
-						//DrawTriangleIndex( verts, tri, i );
+						drawTriangleSelection( triangles, i );
+#if 0
+						drawTriangleIndex( verts, triangles[i], i );
+#endif
 					} else if ( nif->itemName( scene->currentIndex ) == "Normal" ) {
 						Triangle tri = nif->get<Triangle>( scene->currentIndex.parent(), "Triangle" );
 						Vector3 triCentre = ( verts.value( tri.v1() ) + verts.value( tri.v2() ) + verts.value( tri.v3() ) ) /  3.0;
-						glLineWidth( GLView::Settings::lineWidthWireframe );
+						scene->setGLColor( scene->highlightColor );
+						scene->setGLLineWidth( GLView::Settings::lineWidthWireframe );
 						glDepthFunc( GL_ALWAYS );
-						glHighlightColor();
-						glBegin( GL_LINES );
-						glVertex( triCentre );
-						glVertex( triCentre + nif->get<Vector3>( scene->currentIndex ) );
-						glEnd();
+						scene->drawLine( triCentre, triCentre + nif->get<Vector3>( scene->currentIndex ) );
 					}
 				} else if ( n == "Sub Shapes" ) {
 					int start_vertex = 0;
@@ -891,18 +910,17 @@ void Node::drawHvkShape( const NifModel * nif, const QModelIndex & iShape, QStac
 						start_vertex += totalVerts;
 					}
 
-					for ( int t = 0; t < nif->rowCount( iTris ); t++ ) {
-						Triangle tri = nif->get<Triangle>( nif->getIndex( iTris, t ), "Triangle" );
+					drawTriangleSelection( triangles, 0, int( triangles.size() ), start_vertex, end_vertex );
+#if 0
+					for ( int t = 0; t < triangles.size(); t++ ) {
+						Triangle tri = triangles.at( t );
 
-						if ( (start_vertex <= tri[0]) && (tri[0] < end_vertex) ) {
-							if ( (start_vertex <= tri[1]) && (tri[1] < end_vertex) && (start_vertex <= tri[2]) && (tri[2] < end_vertex) ) {
-								drawTriangleSelection( verts, tri );
-								//DrawTriangleIndex( verts, tri, t );
-							} else {
-								qDebug() << "triangle with multiple materials?" << t;
-							}
+						if ( start_vertex <= tri[0] && tri[0] < end_vertex ) {
+							if ( start_vertex <= std::min( tri[1], tri[2] ) && std::max( tri[1], tri[2] ) < end_vertex )
+								drawTriangleIndex( verts, tri, t );
 						}
 					}
+#endif
 				}
 			}
 			// Handle Selection of bhkPackedNiTriStripsShape
@@ -938,18 +956,17 @@ void Node::drawHvkShape( const NifModel * nif, const QModelIndex & iShape, QStac
 					}
 
 					// highlight the triangles of the subshape
-					for ( int t = 0; t < nif->rowCount( iTris ); t++ ) {
-						Triangle tri = nif->get<Triangle>( nif->getIndex( iTris, t ), "Triangle" );
+					drawTriangleSelection( triangles, 0, int( triangles.size() ), start_vertex, end_vertex );
+#if 0
+					for ( int t = 0; t < triangles.size(); t++ ) {
+						Triangle tri = triangles.at( t );
 
-						if ( (start_vertex <= tri[0]) && (tri[0] < end_vertex) ) {
-							if ( (start_vertex <= tri[1]) && (tri[1] < end_vertex) && (start_vertex <= tri[2]) && (tri[2] < end_vertex) ) {
-								drawTriangleSelection( verts, tri );
-								//DrawTriangleIndex( verts, tri, t );
-							} else {
-								qDebug() << "triangle with multiple materials?" << t;
-							}
+						if ( start_vertex <= tri[0] && tri[0] < end_vertex ) {
+							if ( start_vertex <= std::min( tri[1], tri[2] ) && std::max( tri[1], tri[2] ) < end_vertex )
+								drawTriangleIndex( verts, tri, t );
 						}
 					}
+#endif
 				}
 			}
 		}
@@ -1227,14 +1244,14 @@ void Node::drawHvkConstraint( const NifModel * nif, const QModelIndex & iConstra
 		t.rotation.fromEuler( 0.0f, angle, 0.0f );
 		scene->multModelViewMatrix( t );
 
-		drawMarker( &BumperMarker01 );
+		GLMarker::BumperMarker01.drawMarker( scene, true );
 
 		/*draw second marker*/
 		t.translation = Vector3( minDistance < maxDistance ? ( d2 - d1 ).length() : 0.0f, 0.0f, 0.0f );
 		t.rotation.fromEuler( 0.0f, 0.0f, (float)PI );
 		scene->multModelViewMatrix( t );
 
-		drawMarker( &BumperMarker01 );
+		GLMarker::BumperMarker01.drawMarker( scene, true );
 
 		/* draw Pivot B */
 		scene->loadModelViewMatrix( mBodyB );
@@ -1477,25 +1494,25 @@ void Node::drawFurnitureMarker( const NifModel * nif, const QModelIndex & iPosit
 			if ( entry & 0x1 ) {
 				// Chair Front
 				flip[i] = pos;
-				mark[i] = &ChairFront;
+				mark[i] = &GLMarker::ChairFront;
 				i++;
 			}
 			if ( entry & 0x2 ) {
 				// Chair Behind
 				flip[i] = pos;
-				mark[i] = &ChairBehind;
+				mark[i] = &GLMarker::ChairBehind;
 				i++;
 			}
 			if ( entry & 0x4 ) {
 				// Chair Right
 				flip[i] = neg;
-				mark[i] = &ChairLeft;
+				mark[i] = &GLMarker::ChairLeft;
 				i++;
 			}
 			if ( entry & 0x8 ) {
 				// Chair Left
 				flip[i] = pos;
-				mark[i] = &ChairLeft;
+				mark[i] = &GLMarker::ChairLeft;
 				i++;
 			}
 			break;
@@ -1507,25 +1524,25 @@ void Node::drawFurnitureMarker( const NifModel * nif, const QModelIndex & iPosit
 			if ( entry & 0x1 ) {
 				// Bed Front
 				//flip[i] = pos;
-				//mark[i] = &FurnitureMarker03;
+				//mark[i] = &GLMarker::FurnitureMarker03;
 				//i++;
 			}
 			if ( entry & 0x2 ) {
 				// Bed Behind
 				//flip[i] = pos;
-				//mark[i] = &FurnitureMarker04;
+				//mark[i] = &GLMarker::FurnitureMarker04;
 				//i++;
 			}
 			if ( entry & 0x4 ) {
 				// Bed Right
 				flip[i] = neg;
-				mark[i] = &BedLeft;
+				mark[i] = &GLMarker::BedLeft;
 				i++;
 			}
 			if ( entry & 0x8 ) {
 				// Bed Left
 				flip[i] = pos;
-				mark[i] = &BedLeft;
+				mark[i] = &GLMarker::BedLeft;
 				i++;
 			}
 			if ( entry & 0x10 ) {
@@ -1533,7 +1550,7 @@ void Node::drawFurnitureMarker( const NifModel * nif, const QModelIndex & iPosit
 				// This is sometimes used as a real bed position
 				// Other times it is a dummy
 				flip[i] = neg;
-				mark[i] = &BedLeft;
+				mark[i] = &GLMarker::BedLeft;
 				i++;
 			}
 			break;
@@ -1543,7 +1560,7 @@ void Node::drawFurnitureMarker( const NifModel * nif, const QModelIndex & iPosit
 			break;
 		}
 
-		roll = heading;
+		roll = -heading;
 	} else {
 		if ( ref1 != ref2 ) {
 			qDebug() << "Position Ref 1 and 2 are not equal";
@@ -1552,37 +1569,37 @@ void Node::drawFurnitureMarker( const NifModel * nif, const QModelIndex & iPosit
 
 		switch ( ref1 ) {
 		case 1:
-			mark[0] = &FurnitureMarker01; // Single Bed
+			mark[0] = &GLMarker::FurnitureMarker01; // Single Bed
 			break;
 
 		case 2:
 			flip[0] = neg;
-			mark[0] = &FurnitureMarker01;
+			mark[0] = &GLMarker::FurnitureMarker01;
 			break;
 
 		case 3:
-			mark[0] = &FurnitureMarker03; // Ground Bed?
+			mark[0] = &GLMarker::FurnitureMarker03; // Ground Bed?
 			break;
 
 		case 4:
-			mark[0] = &FurnitureMarker04; // Ground Bed? Behind
+			mark[0] = &GLMarker::FurnitureMarker04; // Ground Bed? Behind
 			break;
 
 		case 11:
-			mark[0] = &FurnitureMarker11; // Chair Left
+			mark[0] = &GLMarker::FurnitureMarker11; // Chair Left
 			break;
 
 		case 12:
 			flip[0] = neg;
-			mark[0] = &FurnitureMarker11;
+			mark[0] = &GLMarker::FurnitureMarker11;
 			break;
 
 		case 13:
-			mark[0] = &FurnitureMarker13; // Chair Behind
+			mark[0] = &GLMarker::FurnitureMarker13; // Chair Behind
 			break;
 
 		case 14:
-			mark[0] = &FurnitureMarker14; // Chair Front
+			mark[0] = &GLMarker::FurnitureMarker14; // Chair Front
 			break;
 
 		default:
@@ -1598,26 +1615,19 @@ void Node::drawFurnitureMarker( const NifModel * nif, const QModelIndex & iPosit
 
 	if ( scene->selecting ) {
 		GLint id = ( nif->getBlockNumber( iPosition ) & 0xffff ) | ( ( iPosition.row() & 0xffff ) << 16 );
-		getColorKeyFromID( id );
+		scene->setGLColor( getColorKeyFromID( id ) );
 	}
 
 	for ( int n = 0; n < i; n++ ) {
-		glPushMatrix();
-
-		Transform t;
+		Transform t( offs + Vector3( xOffset, yOffset, zOffset ), 1.0f );
 		t.rotation.fromEuler( 0, 0, roll );
-		t.translation = offs;
-		t.translation[0] += xOffset;
-		t.translation[1] += yOffset;
-		t.translation[2] += zOffset;
 
-		glMultMatrix( t );
+		scene->pushAndMultModelViewMatrix( t );
+		scene->multModelViewMatrix( Transform( Vector3(), flip[n] ) );
 
-		glScale( flip[n] );
+		mark[n]->drawMarker( scene );
 
-		drawMarker( mark[n] );
-
-		glPopMatrix();
+		scene->popModelViewMatrix();
 	}
 }
 

@@ -1,5 +1,7 @@
 #version 410 core
 
+#include "uniforms.glsl"
+
 uniform sampler2D BaseMap;
 uniform sampler2D NormalMap;
 uniform sampler2D GlowMap;
@@ -48,12 +50,10 @@ in vec3 ViewDir;
 
 in vec2 texCoord;
 
-in vec4 A;
 in vec4 C;
-in vec4 D;
 
 in mat3 btnMatrix;
-in mat3 reflMatrix;
+flat in mat3 reflMatrix;
 
 out vec4 fragColor;
 
@@ -163,13 +163,13 @@ void main()
 	} else if ( hasGlowMap ) {
 		emissive += glowMap.rgb * glowMult;
 	}
-	emissive *= lightingMap.a;
+	emissive *= lightingMap.a * lightingControls.z;
 
 	vec3	f0 = max(reflMap.rgb, vec3(0.02));
 
 	// Specular
 	float	roughness = 1.0 - lightingMap.r;
-	vec3	spec = LightingFuncGGX_REF(NdotL0, NdotH, NdotV, max(roughness, 0.02)) * D.rgb;
+	vec3	spec = LightingFuncGGX_REF(NdotL0, NdotH, NdotV, max(roughness, 0.02)) * lightSourceDiffuse[0].rgb;
 
 	// Diffuse
 	vec3	diffuse = vec3(NdotL0);
@@ -183,7 +183,7 @@ void main()
 
 	// Environment
 	vec3	refl = vec3(0.0);
-	vec3	ambient = A.rgb;
+	vec3	ambient = lightSourceAmbient.rgb;
 	if ( hasCubeMap ) {
 		float	m = roughness * (roughness * -4.0 + 10.0);
 		refl = textureLod(CubeMap, reflectedWS, max(m, 0.0)).rgb;
@@ -221,7 +221,7 @@ void main()
 	//}
 
 	// Diffuse
-	color.rgb = diffuse * albedo * D.rgb;
+	color.rgb = diffuse * albedo * lightSourceDiffuse[0].rgb;
 	// Ambient
 	color.rgb += ambient * albedo * ao;
 	// Specular
@@ -231,7 +231,7 @@ void main()
 	// Emissive
 	color.rgb += emissive;
 
-	color.rgb = tonemap(color.rgb * D.a, A.a);
+	color.rgb = tonemap(color.rgb * lightingControls.y, lightingControls.x);
 
 	fragColor = color;
 }
